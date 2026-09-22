@@ -1,0 +1,549 @@
+
+repeat task.wait() until game:IsLoaded()
+
+local Library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)()
+local Subs = Library.subs
+local IsOpen = Subs.Wait
+
+local mainMenuPlaceID = 16205713724 
+local placeId = game.PlaceId
+
+if game.PlaceId == mainMenuPlaceID then
+		local MainWindow = Library:CreateWindow({
+			Name = "HackerLor | TksMyWife",
+			Themeable = {
+				Info = "VTrungHackerLor",
+				Credit = false,
+				Background = "",
+				Visible = true
+			}
+		})
+
+local DailyTab = MainWindow:CreateTab("Main")
+local DailySection = DailyTab:CreateSection({Name = "Spin", Side = "Left"})
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+local TargetClansSup = { "Kamado", "Rengoku", "Soyama", "Uzui" }
+local TargetClansMyth = {}
+
+getgenv().UseSupClans = false
+getgenv().UseMythClans = false
+
+local function IsTargetClan(clanValue)
+    if getgenv().UseSupClans then
+        for _, name in ipairs(TargetClansSup) do
+            if clanValue == name then return true end
+        end
+    end
+    if getgenv().UseMythClans then
+        for _, name in ipairs(TargetClansMyth) do
+            if clanValue == name then return true end
+        end
+    end
+    return false
+end
+
+local function GetClanSlot()
+    local username = player.Name
+    local ok, result = pcall(function()
+        return ReplicatedStorage
+            :WaitForChild("Player_Service")
+            :WaitForChild("Data")
+            :WaitForChild(username)
+            :WaitForChild("slots")
+            :WaitForChild("Slot1")
+            :WaitForChild("Clan")
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function SpinClan()
+    local spinEvent = ReplicatedStorage
+        :WaitForChild("Communication")
+        :WaitForChild("ServerAndClient")
+        :WaitForChild("Signals")
+        :WaitForChild("SignalFunction")
+        :WaitForChild("Function")
+    spinEvent:InvokeServer("ClanSpin")
+
+    task.wait(0.01)
+
+    local completeEvent = ReplicatedStorage
+        :WaitForChild("Communication")
+        :WaitForChild("ServerAndClient")
+        :WaitForChild("Signals")
+        :WaitForChild("SignalEvent")
+        :WaitForChild("Event")
+    completeEvent:FireServer("ClanSpinComplete")
+end
+
+-- ===================== UI =====================
+
+local ClanChooseSection = DailyTab:CreateSection({Name = "TròChơiNhânPhẩm", Side = "Right"})
+
+ClanChooseSection:AddToggle({
+    Name = "Sup Clans",
+    Default = false,
+    Callback = function(value)
+        getgenv().UseSupClans = value
+    end
+})
+
+ClanChooseSection:AddToggle({
+    Name = "Myth Clans",
+    Default = false,
+    Callback = function(value)
+        getgenv().UseMythClans = value
+    end
+})
+
+
+
+DailySection:AddToggle({
+    Name = "Auto Spin Clan",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoSpin = state
+        if state then
+            task.spawn(function()
+                local clanSlot = GetClanSlot()
+                if not clanSlot then
+                    warn("Không tìm thấy Clan slot!")
+                    return
+                end
+
+                while getgenv().AutoSpin do
+                    local currentClan = clanSlot.Value
+
+                    if IsTargetClan(currentClan) then
+                        print("Đã ra clan mục tiêu:", currentClan)
+                        getgenv().AutoSpin = false
+                        break
+                    end
+
+                    print("Clan hiện tại:", currentClan, "→ Spin lại...")
+                    SpinClan()
+
+                    task.wait(0.4)
+                    local newClan = clanSlot.Value
+                    if IsTargetClan(newClan) then
+                        print("Đã ra clan mục tiêu:", newClan)
+                        getgenv().AutoSpin = false
+                        break
+                    end
+                end
+            end)
+        end
+    end
+})
+end
+
+	--// Main Script \\--
+	local library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)()
+	local Subs = library.subs
+	local IsOpen = Subs.Wait
+
+	local Window = library:CreateWindow({
+		Name = "HackerLor | DMM DianaVsRice",
+		Themeable = {
+			Info = "VTrungHackerLor",
+			Credit = false,
+			Background = "",
+			Visible = true
+		}
+	})
+
+	local MainTab = Window:CreateTab({Name = "Main"})
+	local MainSection = MainTab:CreateSection({Name = "Farming"})
+	local Settings = MainTab:CreateSection({Name = "Settings"})
+	local KA = MainTab:CreateSection({Name = "Kill Aura", Side = "Left"})
+	local AutoFarm = MainTab:CreateSection({Name = "Auto", Side = "Right"})
+	local Ect = MainTab:CreateSection({Name = "Ect", Side = "Left"})
+	local Calamity = MainTab:CreateSection({Name = "Calamity", Side = "Right"})
+	local DailySection = MainTab:CreateSection({Name = "Spin", Side = "Left"})
+	local Teleports = MainTab:CreateSection({Name = "Teleports", Side = "Right"})
+
+
+	--// Misc Tab \\--
+	local MiscTab = Window:CreateTab({Name = "Misc"})
+	local MiscSection = MiscTab:CreateSection({Name = "Misc"})
+	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump[P]", Side = "Right"})
+	local Shop = MiscTab:CreateSection({Name = "Đổi item", Side = "Left"})
+	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
+	local AutoSkill = MiscTab:CreateSection({Name = "AutoSkill", Side = "Right"})
+
+
+AutoFarm:AddToggle({
+    Name = "Auto Combat",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoCombat = state
+
+        if state then
+            task.spawn(function()
+                local Event = game:GetService("ReplicatedStorage")
+                    .Communication.ServerAndClient.Signals.SignalEvent.Event
+
+                while getgenv().AutoCombat do
+                    local mob = GetNearestMob(20)
+
+                    if mob then
+                        for i = 1, 5 do
+                            if not getgenv().AutoCombat then break end
+                            if not GetNearestMob(20) then break end
+
+                            Event:FireServer(
+                                "Combat_Service",
+                                "Regular Katana",
+                                i,
+                                false,
+                                0.5,
+                                false,
+                                nil
+                            )
+                            task.wait(0.2)
+                        end
+                    else
+                        task.wait(0.5)
+                    end
+                end
+            end)
+        end
+    end
+})
+
+AutoFarm:AddToggle({
+    Name = "Auto Hover Mob",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoHoverMob = state
+        getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
+
+        if state then
+            task.spawn(function()
+                local player = game:GetService("Players").LocalPlayer
+
+                local function GetNearestMob()
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return nil, nil end
+
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if not ok or not regions then return nil, nil end
+
+                    local nearest, nearestRoot = nil, nil
+                    local nearestDist = math.huge
+
+                    for _, region in ipairs(regions) do
+                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                        if not activeNpcs then continue end
+
+                        for _, folder in ipairs(activeNpcs:GetChildren()) do
+                            for _, npcModel in ipairs(folder:GetChildren()) do
+                                if not npcModel:IsA("Model") then continue end
+
+                                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                                if h and h.Health > 0 and rootPart then
+                                    local dist = (hrp.Position - rootPart.Position).Magnitude
+                                    if dist <= 100 and dist < nearestDist then
+                                        nearestDist = dist
+                                        nearest = npcModel
+                                        nearestRoot = rootPart
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    return nearest, nearestRoot
+                end
+
+                while getgenv().AutoHoverMob do
+                    task.wait(0.01)
+
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then task.wait(0.5) continue end
+
+                    local target, rootPart = GetNearestMob()
+                    if not target or not rootPart then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
+                    if not humanoid or humanoid.Health <= 0 then
+                        task.wait(0.1)
+                        continue
+                    end
+
+                    local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+                    hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+                    hrp.Velocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                end
+            end)
+        end
+    end
+})
+
+AutoFarm:AddTextbox({
+    Name = "Hover Mob Height",
+    Default = "-6.5",
+    Placeholder = "Nhập độ cao (mặc định: -6.5)",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            getgenv().HoverMobHeight = num
+        end
+    end
+})
+
+
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+getgenv().ESPenabled = false
+local ESPDistance = true
+local ESPTextSize = 18
+
+local function createBillboard(adornee, text, parent)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP"
+    billboard.Adornee = adornee
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = parent
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 0, 0)
+    label.TextStrokeTransparency = 0
+    label.Font = Enum.Font.SourceSansBold
+    label.TextScaled = false
+    label.TextSize = ESPTextSize
+    label.Text = text
+    label.Parent = billboard
+
+    return billboard, label
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+
+    if player.Character:FindFirstChild("ESP") then
+        player.Character.ESP:Destroy()
+    end
+
+    local root = player.Character:WaitForChild("HumanoidRootPart")
+    local billboard, textLabel = createBillboard(root, player.Name, player.Character)
+
+    task.spawn(function()
+        while getgenv().ESPenabled 
+        and player.Character 
+        and player.Character:FindFirstChild("HumanoidRootPart") do
+
+            local distance = (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+            
+            if ESPDistance then
+                textLabel.Text = player.Name .. " | " .. math.floor(distance) .. " studs"
+            else
+                textLabel.Text = player.Name
+            end
+
+            task.wait(2)
+        end
+
+        if billboard then billboard:Destroy() end
+    end)
+end
+
+
+
+local function updateAllPlayersESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        createESP(plr)
+    end
+end
+
+
+
+Players.PlayerAdded:Connect(function(player)
+    if getgenv().ESPenabled then
+        player.CharacterAdded:Wait()
+        createESP(player)
+    end
+end)
+
+Ect:AddToggle({
+    Name = "ESP",
+    Flag = "ESP_Toggle",
+    Callback = function(state)
+        getgenv().ESPenabled = state
+
+        if state then
+            updateAllPlayersESP()
+            updateAllDropsESP()
+        else
+
+
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr.Character and plr.Character:FindFirstChild("ESP") then
+                    plr.Character.ESP:Destroy()
+                end
+            end
+
+
+            for _, mobName in ipairs(MobNames) do
+                local mobFolder = workspace:FindFirstChild("Objects")
+                    and workspace.Objects:FindFirstChild("Mobs")
+
+                if mobFolder and mobFolder:FindFirstChild(mobName) then
+                    local mob = mobFolder[mobName]
+                    if mob:FindFirstChild("ESP") then
+                        mob.ESP:Destroy()
+                    end
+                end
+            end
+
+
+            local dropFolder = workspace:FindFirstChild("Objects")
+                and workspace.Objects:FindFirstChild("Drops")
+
+            if dropFolder then
+                for _, drop in pairs(dropFolder:GetChildren()) do
+                    if drop:FindFirstChild("ESP") then
+                        drop.ESP:Destroy()
+                    end
+                end
+            end
+        end
+    end
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local plr = Players.LocalPlayer
+local Character = plr.Character or plr.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- Giá trị mặc định
+local WalkSpeed = 150
+local JumpPower = 100
+local isEnabled = false
+
+-- Các connection để có thể disconnect
+local walkSpeedConnection
+local jumpPowerConnection
+
+-- Hàm cập nhật Humanoid mới khi respawn
+local function updateHumanoid(char)
+    Character = char
+    Humanoid = char:WaitForChild("Humanoid")
+    
+    -- Disconnect các connection cũ nếu có
+    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
+    
+    -- Áp dụng giá trị nếu đang bật
+    if isEnabled then
+        Humanoid.WalkSpeed = WalkSpeed
+        Humanoid.JumpPower = JumpPower
+        
+        -- Theo dõi khi WalkSpeed hoặc JumpPower bị reset
+        walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if Humanoid.WalkSpeed ~= WalkSpeed then
+                Humanoid.WalkSpeed = WalkSpeed
+            end
+        end)
+        
+        jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
+            if Humanoid.JumpPower ~= JumpPower then
+                Humanoid.JumpPower = JumpPower
+            end
+        end)
+    end
+end
+
+plr.CharacterAdded:Connect(updateHumanoid)
+updateHumanoid(Character)
+
+-- Xử lý phím P để bật/tắt
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.P then
+        isEnabled = not isEnabled
+        
+        if Humanoid then
+            if isEnabled then
+                -- Bật: áp dụng speed và jump tùy chỉnh
+                Humanoid.WalkSpeed = WalkSpeed
+                Humanoid.JumpPower = JumpPower
+                
+                -- Theo dõi khi bị reset
+                walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+                    if Humanoid.WalkSpeed ~= WalkSpeed then
+                        Humanoid.WalkSpeed = WalkSpeed
+                    end
+                end)
+                
+                jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
+                    if Humanoid.JumpPower ~= JumpPower then
+                        Humanoid.JumpPower = JumpPower
+                    end
+                end)
+            else
+                -- Tắt: ngắt kết nối, để hệ thống tự áp dụng giá trị mặc định
+                if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+                if jumpPowerConnection then jumpPowerConnection:Disconnect() end
+
+            end
+        end
+    end
+end)
+
+-- Khi người dùng thay đổi slider
+SpeedAndJump:AddSlider({
+    Name = "WalkSpeed",
+    Value = WalkSpeed,
+    Min = 16,
+    Max = 300,
+    Flag = "WalkSpeed",
+    Textbox = true,
+    Callback = function(state)
+        WalkSpeed = state
+        if Humanoid and isEnabled then
+            Humanoid.WalkSpeed = WalkSpeed
+        end
+    end
+})
+
+SpeedAndJump:AddSlider({
+    Name = "JumpPower",
+    Value = JumpPower,
+    Min = 50,
+    Max = 500,
+    Flag = "JumpPower",
+    Textbox = true,
+    Callback = function(state)
+        JumpPower = state
+        if Humanoid and isEnabled then
+            Humanoid.JumpPower = JumpPower
+        end
+    end
+})
