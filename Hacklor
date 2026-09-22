@@ -307,6 +307,92 @@ AutoFarm:AddTextbox({
     end
 })
 
+AutoFarm:AddToggle({
+    Name = "Auto Hover Boss",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoHoverBoss = state
+        getgenv().BossName = getgenv().BossName or ""
+
+        if state then
+            task.spawn(function()
+                local player = game:GetService("Players").LocalPlayer
+
+                local function GetBoss()
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return nil, nil end
+
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if not ok or not regions then return nil, nil end
+
+                    for _, region in ipairs(regions) do
+                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                        if not activeNpcs then continue end
+
+                        for _, folder in ipairs(activeNpcs:GetChildren()) do
+                            for _, npcModel in ipairs(folder:GetChildren()) do
+                                if not npcModel:IsA("Model") then continue end
+                                if npcModel.Name ~= getgenv().BossName then continue end
+
+                                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                                if h and h.Health > 0 and rootPart then
+                                    return npcModel, rootPart
+                                end
+                            end
+                        end
+                    end
+
+                    return nil, nil
+                end
+
+                while getgenv().AutoHoverBoss do
+                    task.wait(0.01)
+
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then task.wait(0.5) continue end
+
+                    if getgenv().BossName == "" then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    local target, rootPart = GetBoss()
+                    if not target or not rootPart then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
+                    if not humanoid or humanoid.Health <= 0 then
+                        task.wait(0.1)
+                        continue
+                    end
+
+                    local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+                    hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+                    hrp.Velocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                end
+            end)
+        end
+    end
+})
+
+AutoFarm:AddTextbox({
+    Name = "Boss Name",
+    Default = "",
+    Placeholder = "Nhập tên boss",
+    Callback = function(value)
+        getgenv().BossName = value or ""
+    end
+})
+
 
 
 local Players = game:GetService("Players")
