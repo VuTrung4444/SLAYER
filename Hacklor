@@ -558,8 +558,6 @@ AutoFarm:AddTextbox({
     end
 })
 
-
-
 getgenv().AutoChest = false
 
 Ect:AddToggle({
@@ -577,6 +575,29 @@ Ect:AddToggle({
                     return char and char:FindFirstChild("HumanoidRootPart")
                 end
 
+
+                local function GetChestPrompt(chest)
+                    local rootPart = chest:FindFirstChild("RootPart")
+                    if not rootPart then return nil, nil end
+
+
+                    local prompt = rootPart:FindFirstChild("ChestPrompt")
+                    if prompt then return prompt, rootPart end
+
+
+                    local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
+                    if anchor then
+                        prompt = anchor:FindFirstChild("ChestPrompt")
+                        if prompt then return prompt, rootPart end
+                    end
+
+
+                    prompt = chest:FindFirstChild("ChestPrompt", true)
+                    if prompt then return prompt, rootPart end
+
+                    return nil, nil
+                end
+
                 local function GetNearestChest()
                     local hrp = GetHRP()
                     if not hrp then return nil end
@@ -589,14 +610,11 @@ Ect:AddToggle({
                     for _, chest in ipairs(chestsFolder:GetChildren()) do
                         if not chest.Name:find("Chest", 1, true) then continue end
 
-                        local rootPart = chest:FindFirstChild("RootPart")
-                        if not rootPart then continue end
-
-                        local prompt = rootPart:FindFirstChild("ChestPrompt")
-                        if not prompt then continue end
+                        local prompt, rootPart = GetChestPrompt(chest)
+                        if not prompt or not rootPart then continue end
 
                         local dist = (hrp.Position - rootPart.Position).Magnitude
-                        if dist < nearestDist then
+                        if dist <= 100 and dist < nearestDist then
                             nearestDist = dist
                             nearest = chest
                         end
@@ -606,8 +624,8 @@ Ect:AddToggle({
                 end
 
                 local function CollectAllDrops()
-                local lootFolder = workspace:FindFirstChild("LootDrops")
-                if not lootFolder then return end
+                    local lootFolder = workspace:FindFirstChild("LootDrops")
+                    if not lootFolder then return end
 
                     while getgenv().AutoChest do
                         local hrp = GetHRP()
@@ -619,10 +637,8 @@ Ect:AddToggle({
                         local nearestDrop, nearestPrompt, nearestDist = nil, nil, math.huge
 
                         for _, drop in ipairs(drops) do
-                            -- LootDrop có thể là Part hoặc Model
                             local prompt = drop:FindFirstChild("LootDropPrompt", true)
                             if not prompt then continue end
-
 
                             local dropPart
                             if drop:IsA("BasePart") then
@@ -634,6 +650,8 @@ Ect:AddToggle({
                             if not dropPart then continue end
 
                             local dist = (hrp.Position - dropPart.Position).Magnitude
+                            if dist > 100 then continue end 
+
                             if dist < nearestDist then
                                 nearestDist = dist
                                 nearestDrop = drop
@@ -655,23 +673,51 @@ Ect:AddToggle({
                             continue
                         end
 
-
                         hrp.CFrame = CFrame.new(dropPart.Position + Vector3.new(3, 0, 0))
                         task.wait(0.3)
 
-
                         if not nearestDrop.Parent then continue end
-
 
                         fireproximityprompt(nearestPrompt)
                         task.wait(0.3)
                     end
                 end
+
                 while getgenv().AutoChest do
                     task.wait(0.5)
 
                     local hrp = GetHRP()
                     if not hrp then continue end
+
+
+                    local lootFolder = workspace:FindFirstChild("LootDrops")
+                    local hasDrops = false
+                    if lootFolder then
+                        for _, drop in ipairs(lootFolder:GetChildren()) do
+                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
+                            if not prompt then continue end
+
+                            local dropPart
+                            if drop:IsA("BasePart") then
+                                dropPart = drop
+                            else
+                                dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
+                            end
+
+                            if not dropPart then continue end
+
+                            local dist = (hrp.Position - dropPart.Position).Magnitude
+                            if dist <= 100 then
+                                hasDrops = true
+                                break
+                            end
+                        end
+                    end
+
+                    if hasDrops then
+                        CollectAllDrops()
+                        continue
+                    end
 
                     local chest = GetNearestChest()
                     if not chest then
@@ -679,24 +725,18 @@ Ect:AddToggle({
                         continue
                     end
 
-                    local rootPart = chest:FindFirstChild("RootPart")
-                    local prompt = rootPart and rootPart:FindFirstChild("ChestPrompt")
-                    if not rootPart or not prompt then continue end
-
+                    local prompt, rootPart = GetChestPrompt(chest)
+                    if not prompt or not rootPart then continue end
 
                     if not getgenv().ChestReached then
                         hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
                         task.wait(0.3)
                     end
 
-
+                    print("Mở chest:", chest.Name)
                     fireproximityprompt(prompt)
                     task.wait(0.5)
 
-                    -- Luôn nhặt drop sau khi gọi prompt
-                    CollectAllDrops()
-
-                    -- Sau đó mới kiểm tra chest
                     if chest.Parent then
                         getgenv().ChestReached = true
                     else
@@ -707,6 +747,7 @@ Ect:AddToggle({
         end
     end
 })
+
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -1533,30 +1574,3 @@ SpeedAndJump:AddSlider({
     end
 })
 end
-
---// Update Labels / Dropdowns \\--
-	spawn(function()
-		while task.wait(4) do
-			updateLabels()
-		end
-	end)
-
-	local VirtualUser = game:GetService("VirtualUser")
-	local Players = game:GetService("Players")
-
-	-- Hàm tạo thời gian random kiểu tự nhiên, có lúc nhanh lúc chậm
-	local function naturalWaitTime()
-		local baseTime = 600 -- 10 phút
-		local offset = math.random(-120, 180) -- lệch ngẫu nhiên từ -2 phút đến +3 phút
-		return math.max(300, baseTime + offset) -- đảm bảo tối thiểu 5 phút
-	end
-
-	spawn(function()
-		while true do
-			wait(naturalWaitTime()) 
-			if Players.LocalPlayer and Players.LocalPlayer.Character then
-				VirtualUser:CaptureController()
-				VirtualUser:ClickButton2(Vector2.new(math.random(100, 1820), math.random(100, 980))) 
-			end
-		end
-	end)
