@@ -212,7 +212,7 @@ DailySection:AddToggle({
 })
 end
 
-if game.PlaceId != mainMenuPlaceID then
+if game.PlaceId ~= mainMenuPlaceID then
 	--// Main Script \\--
 	local library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)()
 	local Subs = library.subs
