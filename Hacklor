@@ -256,8 +256,59 @@ AutoFarm:AddToggle({
 
         if state then
             task.spawn(function()
+                local player = game:GetService("Players").LocalPlayer
                 local Event = game:GetService("ReplicatedStorage")
                     .Communication.ServerAndClient.Signals.SignalEvent.Event
+
+                -- Kiểm tra và đặt Equipped = 1 nếu đang là 0
+                local ok, equipped = pcall(function()
+                    return player.Items_Config.Equipped
+                end)
+                if ok and equipped then
+                    if equipped.Value == 0 then
+                        equipped.Value = 1
+                        print("Đã đặt Equipped = 1")
+                    end
+                else
+                    print("Không tìm thấy Items_Config.Equipped")
+                end
+
+                local function GetNearestMob(maxDistance)
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return nil end
+
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if not ok or not regions then return nil end
+
+                    local nearest, nearestDist = nil, math.huge
+
+                    for _, region in ipairs(regions) do
+                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                        if not activeNpcs then continue end
+
+                        for _, folder in ipairs(activeNpcs:GetChildren()) do
+                            for _, npcModel in ipairs(folder:GetChildren()) do
+                                if not npcModel:IsA("Model") then continue end
+
+                                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                                if h and h.Health > 0 and rootPart then
+                                    local dist = (hrp.Position - rootPart.Position).Magnitude
+                                    if dist <= maxDistance and dist < nearestDist then
+                                        nearestDist = dist
+                                        nearest = npcModel
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    return nearest
+                end
 
                 while getgenv().AutoCombat do
                     local mob = GetNearestMob(20)
