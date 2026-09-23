@@ -693,12 +693,14 @@ Ect:AddToggle({
                     fireproximityprompt(prompt)
                     task.wait(0.5)
 
+                    -- Luôn nhặt drop sau khi gọi prompt
+                    CollectAllDrops()
 
+                    -- Sau đó mới kiểm tra chest
                     if chest.Parent then
                         getgenv().ChestReached = true
                     else
                         getgenv().ChestReached = false
-                        CollectAllDrops()
                     end
                 end
             end)
