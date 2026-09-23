@@ -27,7 +27,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
 local TargetClansSup = { "Kamado", "Rengoku", "Soyama", "Uzui" }
-local TargetClansMyth = {}
+local TargetClansMyth = {"Agatsuma", "Douma", "Himejima", "Iguro", "Shinazugawa", "Tamayo"}
 
 getgenv().UseSupClans = false
 getgenv().UseMythClans = false
@@ -110,38 +110,109 @@ DailySection:AddToggle({
         getgenv().AutoSpin = state
         if state then
             task.spawn(function()
-                local clanSlot = GetClanSlot()
-                if not clanSlot then
+                local username = player.Name
+                local ok, spinsSlot = pcall(function()
+                    return ReplicatedStorage
+                        :WaitForChild("Player_Service")
+                        :WaitForChild("Data")
+                        :WaitForChild(username)
+                        :WaitForChild("slots")
+                        :WaitForChild("Slot1")
+                        :WaitForChild("Spinning")
+                        :WaitForChild("Spins")
+                end)
+                if not ok or not spinsSlot then
+                    warn("Không tìm thấy Spins slot!")
+                    return
+                end
+
+                local ok2, clanSlot = pcall(function()
+                    return ReplicatedStorage
+                        :WaitForChild("Player_Service")
+                        :WaitForChild("Data")
+                        :WaitForChild(username)
+                        :WaitForChild("slots")
+                        :WaitForChild("Slot1")
+                        :WaitForChild("Clan")
+                end)
+                if not ok2 or not clanSlot then
                     warn("Không tìm thấy Clan slot!")
                     return
                 end
 
+                local lastSpins = spinsSlot.Value
+                local spinChecked = false -- chưa kiểm tra thì không gửi lệnh
+
+                -- Lắng nghe khi Spins giảm
+                local connection
+                connection = spinsSlot.Changed:Connect(function(newValue)
+                    if not getgenv().AutoSpin then
+                        connection:Disconnect()
+                        return
+                    end
+
+                    if newValue == lastSpins - 1 then
+                        lastSpins = newValue
+                        spinChecked = true
+
+                        local clanBeforeSpin = clanSlot.Value
+
+                        task.wait(0.2)
+
+                        local currentClan = clanSlot.Value
+
+                        if IsTargetClan(currentClan) then
+                            print("Đã ra clan mục tiêu:", currentClan)
+                            getgenv().AutoSpin = false
+                            connection:Disconnect()
+                            return
+                        end
+
+                        if currentClan == clanBeforeSpin then
+                            print("Clan chưa cập nhật, chờ thêm...")
+                            task.wait(0.5)
+                            currentClan = clanSlot.Value
+
+                            if IsTargetClan(currentClan) then
+                                print("Đã ra clan mục tiêu:", currentClan)
+                                getgenv().AutoSpin = false
+                                connection:Disconnect()
+                                return
+                            end
+
+
+                            if currentClan == clanBeforeSpin then
+                                print("Clan vẫn chưa cập nhật, spin lại...")
+                                SpinClan()
+                            else
+
+                                print("Clan hiện tại:", currentClan, "→ Spin lại...")
+                                SpinClan()
+                            end
+                        else
+
+                            print("Clan hiện tại:", currentClan, "→ Spin lại...")
+                            SpinClan()
+                        end
+                    else
+                        lastSpins = newValue
+                    end
+                end)
+
+                SpinClan()
+
                 while getgenv().AutoSpin do
-                    local currentClan = clanSlot.Value
-
-                    if IsTargetClan(currentClan) then
-                        print("Đã ra clan mục tiêu:", currentClan)
-                        getgenv().AutoSpin = false
-                        break
-                    end
-
-                    print("Clan hiện tại:", currentClan, "→ Spin lại...")
-                    SpinClan()
-
-                    task.wait(0.4)
-                    local newClan = clanSlot.Value
-                    if IsTargetClan(newClan) then
-                        print("Đã ra clan mục tiêu:", newClan)
-                        getgenv().AutoSpin = false
-                        break
-                    end
+                    task.wait(0.5)
                 end
+
+                connection:Disconnect()
             end)
         end
     end
 })
 end
 
+if game.PlaceId != mainMenuPlaceID then
 	--// Main Script \\--
 	local library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)()
 	local Subs = library.subs
@@ -633,3 +704,4 @@ SpeedAndJump:AddSlider({
         end
     end
 })
+end
