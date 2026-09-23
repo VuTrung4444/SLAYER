@@ -465,85 +465,172 @@ AutoFarm:AddTextbox({
 })
 
 
-
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().ESPenabled = false
-local ESPDistance = true
 local ESPTextSize = 18
 
-local function createBillboard(adornee, text, parent)
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP"
-    billboard.Adornee = adornee
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = parent
+-- ===================== PLAYER ESP =====================
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.fromRGB(255, 0, 0)
-    label.TextStrokeTransparency = 0
-    label.Font = Enum.Font.SourceSansBold
-    label.TextScaled = false
-    label.TextSize = ESPTextSize
-    label.Text = text
-    label.Parent = billboard
-
-    return billboard, label
-end
-
-local function createESP(player)
+local function createPlayerESP(player)
     if player == LocalPlayer then return end
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-
-    if player.Character:FindFirstChild("ESP") then
-        player.Character.ESP:Destroy()
-    end
-
-    local root = player.Character:WaitForChild("HumanoidRootPart")
-    local billboard, textLabel = createBillboard(root, player.Name, player.Character)
 
     task.spawn(function()
-        while getgenv().ESPenabled 
-        and player.Character 
-        and player.Character:FindFirstChild("HumanoidRootPart") do
+        -- Tìm model trong workspace.Humanoids khớp với tên player
+        local ok, playerModel = pcall(function()
+            return workspace.Humanoids:WaitForChild(player.Name, 5)
+        end)
+        if not ok or not playerModel then return end
 
-            local distance = (root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-            
-            if ESPDistance then
-                textLabel.Text = player.Name .. " | " .. math.floor(distance) .. " studs"
-            else
-                textLabel.Text = player.Name
+        local rootPart = playerModel:FindFirstChild("HumanoidRootPart")
+        if not rootPart then return end
+
+        -- Dọn ESP cũ
+        local oldESP = rootPart:FindFirstChild("ESP")
+        if oldESP then oldESP:Destroy() end
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP"
+        billboard.Adornee = rootPart
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = rootPart
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(255, 0, 0)
+        label.TextStrokeTransparency = 0
+        label.Font = Enum.Font.SourceSansBold
+        label.TextScaled = false
+        label.TextSize = ESPTextSize
+        label.Parent = billboard
+
+        while getgenv().ESPenabled do
+            local localChar = LocalPlayer.Character
+            local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+            -- Lấy lại rootPart mới nhất từ workspace.Humanoids
+            local currentRoot = playerModel:FindFirstChild("HumanoidRootPart")
+
+            if not currentRoot or not localRoot then
+                task.wait(1)
+                continue
             end
 
-            task.wait(2)
+            if billboard.Adornee ~= currentRoot then
+                billboard.Adornee = currentRoot
+            end
+
+            local distance = (currentRoot.Position - localRoot.Position).Magnitude
+            label.Text = player.Name .. " | " .. math.floor(distance) .. " studs"
+
+            task.wait(0.5)
         end
 
         if billboard then billboard:Destroy() end
     end)
 end
 
-
-
 local function updateAllPlayersESP()
     for _, plr in pairs(Players:GetPlayers()) do
-        createESP(plr)
+        createPlayerESP(plr)
     end
 end
 
-
+local function clearAllPlayerESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        local ok, playerModel = pcall(function()
+            return workspace.Humanoids:FindFirstChild(plr.Name)
+        end)
+        if ok and playerModel then
+            local rootPart = playerModel:FindFirstChild("HumanoidRootPart")
+            if rootPart and rootPart:FindFirstChild("ESP") then
+                rootPart.ESP:Destroy()
+            end
+        end
+    end
+end
 
 Players.PlayerAdded:Connect(function(player)
     if getgenv().ESPenabled then
-        player.CharacterAdded:Wait()
-        createESP(player)
+        task.spawn(function()
+            createPlayerESP(player)
+        end)
     end
 end)
+
+-- ===================== LILY ESP =====================
+
+local function updateSpiderLilyESP()
+    local debree = workspace:FindFirstChild("Debree")
+    if not debree then return end
+
+    for _, item in ipairs(debree:GetChildren()) do
+        if item.Name ~= "Spider Lily" then continue end
+        if not item:IsA("Model") then continue end
+
+        -- Dọn cũ
+        local oldAdorn = item:FindFirstChild("LilyAdorn")
+        if oldAdorn then oldAdorn:Destroy() end
+        local oldESP = item:FindFirstChild("LilyESP")
+        if oldESP then oldESP:Destroy() end
+
+        local ok, pivot = pcall(function() return item:GetPivot() end)
+        if not ok or not pivot then continue end
+
+        local localChar = LocalPlayer.Character
+        local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+        local distance = localRoot
+            and math.floor((pivot.Position - localRoot.Position).Magnitude)
+            or "?"
+
+        local adornPart = Instance.new("Part")
+        adornPart.Name = "LilyAdorn"
+        adornPart.Size = Vector3.new(0.1, 0.1, 0.1)
+        adornPart.Transparency = 1
+        adornPart.Anchored = true
+        adornPart.CanCollide = false
+        adornPart.CFrame = CFrame.new(pivot.Position)
+        adornPart.Parent = item
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "LilyESP"
+        billboard.Adornee = adornPart
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = adornPart  -- parent vào BasePart
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Name = "Label"
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextColor3 = Color3.fromRGB(255, 100, 255)
+        textLabel.TextStrokeTransparency = 0
+        textLabel.Font = Enum.Font.SourceSansBold
+        textLabel.TextScaled = false
+        textLabel.TextSize = 18
+        textLabel.Text = "🌸 Spider Lily | " .. distance .. " studs"
+        textLabel.Parent = billboard
+    end
+end
+
+local function clearSpiderLilyESP()
+    local debree = workspace:FindFirstChild("Debree")
+    if not debree then return end
+    for _, item in ipairs(debree:GetChildren()) do
+        if item.Name ~= "Spider Lily" then continue end
+        local adorn = item:FindFirstChild("LilyAdorn")
+        if adorn then adorn:Destroy() end
+        local esp = item:FindFirstChild("LilyESP")
+        if esp then esp:Destroy() end
+    end
+end
+
+-- ===================== TOGGLE =====================
 
 Ect:AddToggle({
     Name = "ESP",
@@ -552,41 +639,13 @@ Ect:AddToggle({
         getgenv().ESPenabled = state
 
         if state then
+            clearAllPlayerESP()
+            task.wait(0.1)
             updateAllPlayersESP()
-            updateAllDropsESP()
+            updateSpiderLilyESP()
         else
-
-
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr.Character and plr.Character:FindFirstChild("ESP") then
-                    plr.Character.ESP:Destroy()
-                end
-            end
-
-
-            for _, mobName in ipairs(MobNames) do
-                local mobFolder = workspace:FindFirstChild("Objects")
-                    and workspace.Objects:FindFirstChild("Mobs")
-
-                if mobFolder and mobFolder:FindFirstChild(mobName) then
-                    local mob = mobFolder[mobName]
-                    if mob:FindFirstChild("ESP") then
-                        mob.ESP:Destroy()
-                    end
-                end
-            end
-
-
-            local dropFolder = workspace:FindFirstChild("Objects")
-                and workspace.Objects:FindFirstChild("Drops")
-
-            if dropFolder then
-                for _, drop in pairs(dropFolder:GetChildren()) do
-                    if drop:FindFirstChild("ESP") then
-                        drop.ESP:Destroy()
-                    end
-                end
-            end
+            clearAllPlayerESP()
+            clearSpiderLilyESP()
         end
     end
 })
