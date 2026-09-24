@@ -488,7 +488,8 @@ AutoFarm:AddToggle({
                                     local dist = (hrp.Position - rootPart.Position).Magnitude
 
                                     -- Nếu có filter thì không giới hạn khoảng cách
-                                    local inRange = filter ~= "" or dist <= 100
+                                    local range = getgenv().MobSearchRange or 100
+                                    local inRange = filter ~= "" or dist <= range
 
                                     if inRange and dist < nearestDist then
                                         nearestDist = dist
@@ -534,6 +535,16 @@ AutoFarm:AddToggle({
                 end
             end)
         end
+    end
+})
+
+AutoFarm:AddTextbox({
+    Name = "Khoảng cách",
+    Default = "100",
+    Placeholder = "Nhập khoảng cách (mặc định: 100)",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then getgenv().MobSearchRange = num end
     end
 })
 
