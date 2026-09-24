@@ -162,19 +162,16 @@ DailySection:AddToggle({
                         local currentClan = clanSlot.Value
 
                         if IsTargetClan(currentClan) then
-                            print("Đã ra clan mục tiêu:", currentClan)
                             getgenv().AutoSpin = false
                             connection:Disconnect()
                             return
                         end
 
                         if currentClan == clanBeforeSpin then
-                            print("Clan chưa cập nhật, chờ thêm...")
                             task.wait(0.5)
                             currentClan = clanSlot.Value
 
                             if IsTargetClan(currentClan) then
-                                print("Đã ra clan mục tiêu:", currentClan)
                                 getgenv().AutoSpin = false
                                 connection:Disconnect()
                                 return
@@ -182,16 +179,11 @@ DailySection:AddToggle({
 
 
                             if currentClan == clanBeforeSpin then
-                                print("Clan vẫn chưa cập nhật, spin lại...")
                                 SpinClan()
                             else
-
-                                print("Clan hiện tại:", currentClan, "→ Spin lại...")
                                 SpinClan()
                             end
                         else
-
-                            print("Clan hiện tại:", currentClan, "→ Spin lại...")
                             SpinClan()
                         end
                     else
@@ -267,10 +259,7 @@ AutoFarm:AddToggle({
                 if ok and equipped then
                     if equipped.Value == 0 then
                         equipped.Value = 1
-                        print("Đã đặt Equipped = 1")
                     end
-                else
-                    print("Không tìm thấy Items_Config.Equipped")
                 end
 
                 local function GetNearestMob(maxDistance)
@@ -363,8 +352,6 @@ local function GetAndWaitForQuest(player)
     if getgenv().AutoMissionName == "" or getgenv().AutoMissionQuest == "" then return end
     if HasQuest() then return end
 
-    print("Chưa có nhiệm vụ, đang lấy...")
-
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -387,7 +374,6 @@ local function GetAndWaitForQuest(player)
     end
 
     if not npcModel then
-        print("Không tìm thấy NPC:", getgenv().AutoMissionName)
         return
     end
 
@@ -400,12 +386,9 @@ local function GetAndWaitForQuest(player)
         .Communication.ServerAndClient.Signals.SignalEvent.Event
 
     while not HasQuest() do
-        print("Gọi nhiệm vụ:", getgenv().AutoMissionQuest)
         Event:FireServer("AddQuest", getgenv().AutoMissionQuest)
         task.wait(1)
     end
-
-    print("Đã có nhiệm vụ:", getgenv().AutoMissionQuest)
 end
 
 getgenv().AutoGetMission = false
@@ -744,7 +727,7 @@ Ect:AddToggle({
                         task.wait(0.3)
                     end
 
-                    print("Mở chest:", chest.Name)
+
                     fireproximityprompt(prompt)
                     task.wait(0.5)
 
