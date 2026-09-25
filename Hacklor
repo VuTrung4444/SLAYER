@@ -668,7 +668,7 @@ Ect:AddToggle({
                             continue
                         end
 
-                        hrp.CFrame = CFrame.new(dropPart.Position + Vector3.new(3, 0, 0))
+                        hrp.CFrame = CFrame.new(dropPart.Position + Vector3.new(3, 3, 0))
                         task.wait(0.3)
 
                         if not nearestDrop.Parent then continue end
@@ -724,7 +724,7 @@ Ect:AddToggle({
                     if not prompt or not rootPart then continue end
 
                     if not getgenv().ChestReached then
-                        hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
+                        hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 3, 0))
                         task.wait(0.3)
                     end
 
