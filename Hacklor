@@ -312,12 +312,13 @@ AutoFarm:AddToggle({
                                 "Regular Katana",
                                 i,
                                 false,
-                                0.5,
+                                0.2,
                                 false,
                                 nil
                             )
                             task.wait(0.2)
                         end
+						task.wait(0.5)
                     else
                         task.wait(0.5)
                     end
