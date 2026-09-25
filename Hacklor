@@ -423,7 +423,6 @@ AutoMission:AddTextbox({
 })
 
 
-
 AutoFarm:AddToggle({
     Name = "Auto Farm",
     Default = false,
@@ -449,6 +448,7 @@ AutoFarm:AddToggle({
                     local nearest, nearestRoot = nil, nil
                     local nearestDist = math.huge
                     local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+                    local range = getgenv().MobSearchRange
 
                     for _, region in ipairs(regions) do
                         local activeNpcs = region:FindFirstChild("ActiveNpcs")
@@ -458,9 +458,9 @@ AutoFarm:AddToggle({
                             for _, npcModel in ipairs(folder:GetChildren()) do
                                 if not npcModel:IsA("Model") then continue end
 
-                                -- Lọc theo tên nếu có nhập filter
+                                -- So khớp tên chính xác nếu có filter
                                 if filter ~= "" then
-                                    if npcModel.Name:lower():find(filter, 1, true) == nil then
+                                    if npcModel.Name:lower() ~= filter then
                                         continue
                                     end
                                 end
@@ -471,9 +471,8 @@ AutoFarm:AddToggle({
                                 if h and h.Health > 0 and rootPart then
                                     local dist = (hrp.Position - rootPart.Position).Magnitude
 
-                                    -- Nếu có filter thì không giới hạn khoảng cách
-                                    local range = getgenv().MobSearchRange or 100
-                                    local inRange = filter ~= "" or dist <= range
+                                    -- Không giới hạn nếu range không được nhập
+                                    local inRange = (range == nil) or (dist <= range)
 
                                     if inRange and dist < nearestDist then
                                         nearestDist = dist
@@ -486,6 +485,44 @@ AutoFarm:AddToggle({
                     end
 
                     return nearest, nearestRoot
+                end
+
+                -- Tìm BossInfo theo tên filter và di chuyển tới toạ độ Center
+                local function TryMoveToBossSpawn()
+                    local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+                    if filter == "" then return end
+
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if not ok or not regions then return end
+
+                    for _, region in ipairs(regions) do
+                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                        if not activeNpcs then continue end
+
+                        for _, folder in ipairs(activeNpcs:GetChildren()) do
+                            -- Kiểm tra tên folder khớp với filter
+                            if folder.Name:lower() ~= filter then continue end
+
+                            local bossInfo = folder:FindFirstChild("BossInfo")
+                            if not bossInfo then continue end
+
+                            -- Kiểm tra NpcCode khớp
+                            local npcCode = bossInfo:GetAttribute("NpcCode") or bossInfo.Parent and bossInfo.Parent.Name
+                            local center = bossInfo:GetAttribute("Center")
+
+                            if center and typeof(center) == "Vector3" then
+                                print("Tìm thấy BossInfo, di chuyển tới:", center)
+                                hrp.CFrame = CFrame.new(center)
+                                return
+                            end
+                        end
+                    end
                 end
 
                 while getgenv().AutoHoverMob do
@@ -501,8 +538,14 @@ AutoFarm:AddToggle({
                     if not hrp then task.wait(0.5) continue end
 
                     local target, rootPart = GetNearestMob()
+
                     if not target or not rootPart then
-                        task.wait(0.5)
+
+                        local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+                        if filter ~= "" then
+                            TryMoveToBossSpawn()
+                        end
+                        task.wait(1)
                         continue
                     end
 
@@ -524,11 +567,15 @@ AutoFarm:AddToggle({
 
 AutoFarm:AddTextbox({
     Name = "Khoảng cách",
-    Default = "100",
-    Placeholder = "Nhập khoảng cách (mặc định: 100)",
+    Default = "",
+    Placeholder = "Để trống = không giới hạn",
     Callback = function(value)
         local num = tonumber(value)
-        if num then getgenv().MobSearchRange = num end
+        if num then
+            getgenv().MobSearchRange = num
+        else
+            getgenv().MobSearchRange = nil
+        end
     end
 })
 
@@ -547,11 +594,12 @@ AutoFarm:AddTextbox({
 AutoFarm:AddTextbox({
     Name = "Tên Mob",
     Default = "",
-    Placeholder = "Nhập tên mob (vd: Bandit), để trống = tất cả trong 100u",
+    Placeholder = "Nhập tên chính xác (vd: Kaiden)",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
     end
 })
+
 
 getgenv().AutoChest = false
 
@@ -724,7 +772,7 @@ Ect:AddToggle({
                     if not prompt or not rootPart then continue end
 
                     if not getgenv().ChestReached then
-                        hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 3, 0))
+                        hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
                         task.wait(0.3)
                     end
 
@@ -743,6 +791,32 @@ Ect:AddToggle({
     end
 })
 
+getgenv().AutoGame = false
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if not getgenv().AutoGame then continue end
+
+        local ok, SignalEvent = pcall(function()
+            return require(game:GetService("ReplicatedStorage")
+                .Communication.ServerAndClient.Signals.SignalEvent)
+        end)
+        if not ok or not SignalEvent then continue end
+
+        SignalEvent.ToServer("training_signaler", "Stop", true)
+
+        task.wait(2)
+    end
+end)
+
+Ect:AddToggle({
+    Name = "Auto Training",
+    Default = false,
+    Callback = function(value)
+        getgenv().AutoGame = value
+    end
+})
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
