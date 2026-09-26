@@ -1003,6 +1003,15 @@ Ect:AddToggle({
     end
 })
 
+Ect:AddToggle({
+    Name = "Sun Damage",
+    Default = false,
+    Callback = function(state)
+        local Event = game:GetService("ReplicatedStorage")
+            .Communication.ServerAndClient.Signals.SignalFunction.Function
+        Event:InvokeServer("SunDamage", not state)
+    end
+})
 
 local Noclip = nil
 local Clip = nil
