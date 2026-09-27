@@ -719,7 +719,7 @@ Ect:AddToggle({
                         if not prompt or not rootPart then continue end
 
                         local dist = (hrp.Position - rootPart.Position).Magnitude
-                        if dist <= 1000 and dist < nearestDist then
+                        if dist <= 500 and dist < nearestDist then
                             nearestDist = dist
                             nearest = chest
                         end
@@ -728,65 +728,68 @@ Ect:AddToggle({
                     return nearest
                 end
 
-                local function CollectAllDrops()
-                    local lootFolder = workspace:FindFirstChild("LootDrops")
-                    if not lootFolder then return end
+               local function CollectAllDrops()
+				local lootFolder = workspace:FindFirstChild("LootDrops")
+				if not lootFolder then return end
 
-                    while getgenv().AutoChest do
-                        local hrp = GetHRP()
-                        if not hrp then break end
+				while getgenv().AutoChest do
+					local hrp = GetHRP()
+					if not hrp then break end
 
-                        local drops = lootFolder:GetChildren()
-                        if #drops == 0 then break end
+					-- Lấy danh sách drop trong 1000 đơn vị
+					local validDrops = {}
+					for _, drop in ipairs(lootFolder:GetChildren()) do
+						local prompt = drop:FindFirstChild("LootDropPrompt", true)
+						if not prompt then continue end
 
-                        local nearestDrop, nearestPrompt, nearestDist = nil, nil, math.huge
+						local dropPart
+						if drop:IsA("BasePart") then
+							dropPart = drop
+						else
+							dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
+						end
+						if not dropPart then continue end
 
-                        for _, drop in ipairs(drops) do
-                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
-                            if not prompt then continue end
+						local dist = (hrp.Position - dropPart.Position).Magnitude
+						if dist <= 500 then
+							table.insert(validDrops, { drop = drop, prompt = prompt, part = dropPart })
+						end
+					end
 
-                            local dropPart
-                            if drop:IsA("BasePart") then
-                                dropPart = drop
-                            else
-                                dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
-                            end
+					-- Không còn drop nào trong tầm thì thoát
+					if #validDrops == 0 then break end
 
-                            if not dropPart then continue end
+					-- Duyệt qua từng drop một lần
+					local anyRemaining = false
+					for _, data in ipairs(validDrops) do
+						if not getgenv().AutoChest then break end
 
-                            local dist = (hrp.Position - dropPart.Position).Magnitude
-                            if dist > 100 then continue end 
+						-- Kiểm tra drop còn tồn tại không
+						if not data.drop.Parent then continue end
 
-                            if dist < nearestDist then
-                                nearestDist = dist
-                                nearestDrop = drop
-                                nearestPrompt = prompt
-                            end
-                        end
+						hrp = GetHRP()
+						if not hrp then break end
 
-                        if not nearestDrop or not nearestPrompt then break end
+						-- Di chuyển tới drop
+						hrp.CFrame = CFrame.new(data.part.Position + Vector3.new(3, 3, 0))
+						task.wait(0.2)
 
-                        local dropPart
-                        if nearestDrop:IsA("BasePart") then
-                            dropPart = nearestDrop
-                        else
-                            dropPart = nearestDrop:FindFirstChildWhichIsA("BasePart", true)
-                        end
+						-- Gọi prompt một lần
+						if data.drop.Parent then
+							fireproximityprompt(data.prompt)
+						end
+						task.wait(0.2)
 
-                        if not dropPart then
-                            task.wait(0.3)
-                            continue
-                        end
+						-- Kiểm tra drop còn tồn tại sau khi nhặt không
+						if data.drop.Parent then
+							anyRemaining = true
+						end
+					end
 
-                        hrp.CFrame = CFrame.new(dropPart.Position + Vector3.new(3, 3, 0))
-                        task.wait(0.3)
-
-                        if not nearestDrop.Parent then continue end
-
-                        fireproximityprompt(nearestPrompt)
-                        task.wait(0.3)
-                    end
-                end
+					-- Nếu còn drop cũ thì lặp lại, nếu hết thì thoát
+					if not anyRemaining then break end
+				end
+			end
 
                 while getgenv().AutoChest do
                     task.wait(0.5)
@@ -812,7 +815,7 @@ Ect:AddToggle({
                             if not dropPart then continue end
 
                             local dist = (hrp.Position - dropPart.Position).Magnitude
-                            if dist <= 100 then
+                            if dist <= 500 then
                                 hasDrops = true
                                 break
                             end
