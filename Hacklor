@@ -316,9 +316,9 @@ AutoFarm:AddToggle({
                                 false,
                                 nil
                             )
-                            task.wait(0.2)
+                            task.wait(0.1)
                         end
-						task.wait(0.5)
+						task.wait(0.75)
                     else
                         task.wait(0.5)
                     end
