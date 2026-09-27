@@ -257,7 +257,7 @@ AutoFarm:AddToggle({
                     return player.Items_Config.Equipped
                 end)
                 if ok and equipped then
-                    if equipped.Value == 0 then
+                    if equipped.Value ~= 1 then
                         equipped.Value = 1
                     end
                 end
@@ -422,7 +422,6 @@ AutoMission:AddTextbox({
     end
 })
 
-
 AutoFarm:AddToggle({
     Name = "Auto Farm",
     Default = false,
@@ -434,6 +433,9 @@ AutoFarm:AddToggle({
         if state then
             task.spawn(function()
                 local player = game:GetService("Players").LocalPlayer
+                local lockedTarget = nil
+                local lockedRoot = nil
+                local bossSpawnMoved = false
 
                 local function GetNearestMob()
                     local char = player.Character
@@ -458,11 +460,8 @@ AutoFarm:AddToggle({
                             for _, npcModel in ipairs(folder:GetChildren()) do
                                 if not npcModel:IsA("Model") then continue end
 
-                                -- So khớp tên chính xác nếu có filter
                                 if filter ~= "" then
-                                    if npcModel.Name:lower() ~= filter then
-                                        continue
-                                    end
+                                    if npcModel.Name:lower() ~= filter then continue end
                                 end
 
                                 local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
@@ -470,8 +469,6 @@ AutoFarm:AddToggle({
 
                                 if h and h.Health > 0 and rootPart then
                                     local dist = (hrp.Position - rootPart.Position).Magnitude
-
-                                    -- Không giới hạn nếu range không được nhập
                                     local inRange = (range == nil) or (dist <= range)
 
                                     if inRange and dist < nearestDist then
@@ -487,8 +484,9 @@ AutoFarm:AddToggle({
                     return nearest, nearestRoot
                 end
 
-                -- Tìm BossInfo theo tên filter và di chuyển tới toạ độ Center
                 local function TryMoveToBossSpawn()
+                    if bossSpawnMoved then return end
+
                     local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
                     if filter == "" then return end
 
@@ -506,23 +504,54 @@ AutoFarm:AddToggle({
                         if not activeNpcs then continue end
 
                         for _, folder in ipairs(activeNpcs:GetChildren()) do
-                            -- Kiểm tra tên folder khớp với filter
                             if folder.Name:lower() ~= filter then continue end
 
                             local bossInfo = folder:FindFirstChild("BossInfo")
                             if not bossInfo then continue end
 
-                            -- Kiểm tra NpcCode khớp
-                            local npcCode = bossInfo:GetAttribute("NpcCode") or bossInfo.Parent and bossInfo.Parent.Name
                             local center = bossInfo:GetAttribute("Center")
-
                             if center and typeof(center) == "Vector3" then
-                                print("Tìm thấy BossInfo, di chuyển tới:", center)
+                                print("Di chuyển tới BossInfo:", center)
                                 hrp.CFrame = CFrame.new(center)
+                                bossSpawnMoved = true
                                 return
                             end
                         end
                     end
+                end
+
+                local function HasNearbyChestOrDrop(maxDist)
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return false end
+
+                    local chestsFolder = workspace:FindFirstChild("Chests")
+                    if chestsFolder then
+                        for _, chest in ipairs(chestsFolder:GetChildren()) do
+                            if not chest.Name:find("Chest", 1, true) then continue end
+                            local rootPart = chest:FindFirstChild("RootPart")
+                            if rootPart then
+                                local dist = (hrp.Position - rootPart.Position).Magnitude
+                                if dist <= maxDist then return true end
+                            end
+                        end
+                    end
+
+                    local lootFolder = workspace:FindFirstChild("LootDrops")
+                    if lootFolder then
+                        for _, drop in ipairs(lootFolder:GetChildren()) do
+                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
+                            if not prompt then continue end
+                            local dropPart = drop:IsA("BasePart") and drop
+                                or drop:FindFirstChildWhichIsA("BasePart", true)
+                            if dropPart then
+                                local dist = (hrp.Position - dropPart.Position).Magnitude
+                                if dist <= maxDist then return true end
+                            end
+                        end
+                    end
+
+                    return false
                 end
 
                 while getgenv().AutoHoverMob do
@@ -537,10 +566,33 @@ AutoFarm:AddToggle({
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
 
+                    -- Nếu AutoChest bật và có chest/drop gần thì dừng hover
+                    if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    -- Kiểm tra mục tiêu đang khoá còn sống không
+                    if lockedTarget and lockedRoot then
+                        local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
+                        if h and h.Health > 0 and lockedTarget.Parent then
+                            -- Tiếp tục hover mục tiêu đang khoá
+                            local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+                            hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+                            hrp.Velocity = Vector3.zero
+                            hrp.AssemblyLinearVelocity = Vector3.zero
+                            continue
+                        else
+                            -- Mục tiêu chết, reset khoá và bossSpawnMoved
+                            lockedTarget = nil
+                            lockedRoot = nil
+                            bossSpawnMoved = false
+                        end
+                    end
+
                     local target, rootPart = GetNearestMob()
 
                     if not target or not rootPart then
-
                         local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
                         if filter ~= "" then
                             TryMoveToBossSpawn()
@@ -549,8 +601,15 @@ AutoFarm:AddToggle({
                         continue
                     end
 
+                    -- Khoá mục tiêu mới
+                    lockedTarget = target
+                    lockedRoot = rootPart
+                    bossSpawnMoved = false
+
                     local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
                     if not humanoid or humanoid.Health <= 0 then
+                        lockedTarget = nil
+                        lockedRoot = nil
                         task.wait(0.1)
                         continue
                     end
@@ -560,6 +619,11 @@ AutoFarm:AddToggle({
                     hrp.Velocity = Vector3.zero
                     hrp.AssemblyLinearVelocity = Vector3.zero
                 end
+
+                -- Reset khi tắt toggle
+                lockedTarget = nil
+                lockedRoot = nil
+                bossSpawnMoved = false
             end)
         end
     end
@@ -585,9 +649,7 @@ AutoFarm:AddTextbox({
     Placeholder = "Nhập độ cao (mặc định: -6.5)",
     Callback = function(value)
         local num = tonumber(value)
-        if num then
-            getgenv().HoverMobHeight = num
-        end
+        if num then getgenv().HoverMobHeight = num end
     end
 })
 
@@ -657,7 +719,7 @@ Ect:AddToggle({
                         if not prompt or not rootPart then continue end
 
                         local dist = (hrp.Position - rootPart.Position).Magnitude
-                        if dist <= 100 and dist < nearestDist then
+                        if dist <= 1000 and dist < nearestDist then
                             nearestDist = dist
                             nearest = chest
                         end
@@ -817,6 +879,27 @@ Ect:AddToggle({
         getgenv().AutoGame = value
     end
 })
+
+--[[getgenv().AutoCupGame = false
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if not getgenv().AutoCupGame then continue end
+
+        local ok, SignalEvent = pcall(function()
+            return require(game:GetService("ReplicatedStorage")
+                .Communication.ServerAndClient.Signals.SignalEvent)
+        end)
+        if not ok or not SignalEvent then continue end
+
+        -- Gửi lệnh thắng trực tiếp
+        SignalEvent.ToServer("training_signaler", "Stop", true)
+        print("Đã gửi lệnh thắng Cup Game")
+
+        task.wait(2)
+    end
+end)]]
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -1547,7 +1630,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 
 -- Giá trị mặc định
 local WalkSpeed = 150
-local JumpPower = 100
+local JumpPower = 200
 local isEnabled = false
 
 -- Các connection để có thể disconnect
