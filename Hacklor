@@ -225,8 +225,7 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local Settings = MainTab:CreateSection({Name = "Settings"})
 	local AutoMission = MainTab:CreateSection({Name = "Mission", Side = "Left"})
 	local AutoFarm = MainTab:CreateSection({Name = "Auto", Side = "Right"})
-	local Ect = MainTab:CreateSection({Name = "Ect", Side = "Left"})
-	local Calamity = MainTab:CreateSection({Name = "Calamity", Side = "Right"})
+	local AutoSkill = MainTab:CreateSection({Name = "Auto Skill", Side = "Left"})
 	local DailySection = MainTab:CreateSection({Name = "Spin", Side = "Left"})
 	local Teleports = MainTab:CreateSection({Name = "Teleports", Side = "Right"})
 
@@ -235,9 +234,9 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local MiscTab = Window:CreateTab({Name = "Misc"})
 	local MiscSection = MiscTab:CreateSection({Name = "Misc"})
 	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump[P]", Side = "Right"})
+	local Ect = MiscTab:CreateSection({Name = "Ect", Side = "Left"})
 	local Shop = MiscTab:CreateSection({Name = "Đổi item", Side = "Left"})
 	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
-	local AutoSkill = MiscTab:CreateSection({Name = "AutoSkill", Side = "Right"})
 
 
 AutoFarm:AddToggle({
@@ -252,15 +251,10 @@ AutoFarm:AddToggle({
                 local Event = game:GetService("ReplicatedStorage")
                     .Communication.ServerAndClient.Signals.SignalEvent.Event
 
-                -- Kiểm tra và đặt Equipped = 1 nếu đang là 0
                 local ok, equipped = pcall(function()
                     return player.Items_Config.Equipped
                 end)
-                if ok and equipped then
-                    if equipped.Value ~= 1 then
-                        equipped.Value = 1
-                    end
-                end
+
 
                 local function GetNearestMob(maxDistance)
                     local char = player.Character
@@ -302,6 +296,11 @@ AutoFarm:AddToggle({
                 while getgenv().AutoCombat do
                     local mob = GetNearestMob(20)
 
+                if ok and equipped then
+                    if equipped.Value ~= 1 then
+                        equipped.Value = 1
+                    end
+                end
                     if mob then
                         for i = 1, 5 do
                             if not getgenv().AutoCombat then break end
@@ -316,7 +315,7 @@ AutoFarm:AddToggle({
                                 false,
                                 nil
                             )
-                            task.wait(0.1)
+                            task.wait(0.2)
                         end
 						task.wait(0.75)
                     else
@@ -421,6 +420,7 @@ AutoMission:AddTextbox({
         getgenv().AutoMissionQuest = value or ""
     end
 })
+
 
 AutoFarm:AddToggle({
     Name = "Auto Farm",
@@ -662,7 +662,6 @@ AutoFarm:AddTextbox({
     end
 })
 
-
 getgenv().AutoChest = false
 
 Ect:AddToggle({
@@ -670,6 +669,7 @@ Ect:AddToggle({
     Default = false,
     Callback = function(state)
         getgenv().AutoChest = state
+        getgenv().ChestReached = false
 
         if state then
             task.spawn(function()
@@ -680,22 +680,18 @@ Ect:AddToggle({
                     return char and char:FindFirstChild("HumanoidRootPart")
                 end
 
-
                 local function GetChestPrompt(chest)
                     local rootPart = chest:FindFirstChild("RootPart")
                     if not rootPart then return nil, nil end
 
-
                     local prompt = rootPart:FindFirstChild("ChestPrompt")
                     if prompt then return prompt, rootPart end
-
 
                     local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
                     if anchor then
                         prompt = anchor:FindFirstChild("ChestPrompt")
                         if prompt then return prompt, rootPart end
                     end
-
 
                     prompt = chest:FindFirstChild("ChestPrompt", true)
                     if prompt then return prompt, rootPart end
@@ -728,75 +724,65 @@ Ect:AddToggle({
                     return nearest
                 end
 
-               local function CollectAllDrops()
-				local lootFolder = workspace:FindFirstChild("LootDrops")
-				if not lootFolder then return end
+                local function CollectAllDrops()
+                    local lootFolder = workspace:FindFirstChild("LootDrops")
+                    if not lootFolder then return end
 
-				while getgenv().AutoChest do
-					local hrp = GetHRP()
-					if not hrp then break end
+                    while getgenv().AutoChest do
+                        local hrp = GetHRP()
+                        if not hrp then break end
 
-					-- Lấy danh sách drop trong 1000 đơn vị
-					local validDrops = {}
-					for _, drop in ipairs(lootFolder:GetChildren()) do
-						local prompt = drop:FindFirstChild("LootDropPrompt", true)
-						if not prompt then continue end
+                        local validDrops = {}
+                        for _, drop in ipairs(lootFolder:GetChildren()) do
+                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
+                            if not prompt then continue end
 
-						local dropPart
-						if drop:IsA("BasePart") then
-							dropPart = drop
-						else
-							dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
-						end
-						if not dropPart then continue end
+                            local dropPart
+                            if drop:IsA("BasePart") then
+                                dropPart = drop
+                            else
+                                dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
+                            end
+                            if not dropPart then continue end
 
-						local dist = (hrp.Position - dropPart.Position).Magnitude
-						if dist <= 500 then
-							table.insert(validDrops, { drop = drop, prompt = prompt, part = dropPart })
-						end
-					end
+                            local dist = (hrp.Position - dropPart.Position).Magnitude
+                            if dist <= 500 then
+                                table.insert(validDrops, { drop = drop, prompt = prompt, part = dropPart })
+                            end
+                        end
 
-					-- Không còn drop nào trong tầm thì thoát
-					if #validDrops == 0 then break end
+                        if #validDrops == 0 then break end
 
-					-- Duyệt qua từng drop một lần
-					local anyRemaining = false
-					for _, data in ipairs(validDrops) do
-						if not getgenv().AutoChest then break end
+                        local anyRemaining = false
+                        for _, data in ipairs(validDrops) do
+                            if not getgenv().AutoChest then break end
+                            if not data.drop.Parent then continue end
 
-						-- Kiểm tra drop còn tồn tại không
-						if not data.drop.Parent then continue end
+                            hrp = GetHRP()
+                            if not hrp then break end
 
-						hrp = GetHRP()
-						if not hrp then break end
+                            hrp.CFrame = CFrame.new(data.part.Position + Vector3.new(3, 3, 0))
+                            task.wait(0.2)
 
-						-- Di chuyển tới drop
-						hrp.CFrame = CFrame.new(data.part.Position + Vector3.new(3, 3, 0))
-						task.wait(0.2)
+                            if data.drop.Parent then
+                                fireproximityprompt(data.prompt)
+                            end
+                            task.wait(0.2)
 
-						-- Gọi prompt một lần
-						if data.drop.Parent then
-							fireproximityprompt(data.prompt)
-						end
-						task.wait(0.2)
+                            if data.drop.Parent then
+                                anyRemaining = true
+                            end
+                        end
 
-						-- Kiểm tra drop còn tồn tại sau khi nhặt không
-						if data.drop.Parent then
-							anyRemaining = true
-						end
-					end
-
-					-- Nếu còn drop cũ thì lặp lại, nếu hết thì thoát
-					if not anyRemaining then break end
-				end
-			end
+                        if not anyRemaining then break end
+                    end
+                end
 
                 while getgenv().AutoChest do
                     task.wait(0.5)
 
                     local hrp = GetHRP()
                     if not hrp then continue end
-
 
                     local lootFolder = workspace:FindFirstChild("LootDrops")
                     local hasDrops = false
@@ -811,7 +797,6 @@ Ect:AddToggle({
                             else
                                 dropPart = drop:FindFirstChildWhichIsA("BasePart", true)
                             end
-
                             if not dropPart then continue end
 
                             local dist = (hrp.Position - dropPart.Position).Magnitude
@@ -829,6 +814,7 @@ Ect:AddToggle({
 
                     local chest = GetNearestChest()
                     if not chest then
+                        getgenv().ChestReached = false
                         task.wait(1)
                         continue
                     end
@@ -840,7 +826,6 @@ Ect:AddToggle({
                         hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
                         task.wait(0.3)
                     end
-
 
                     fireproximityprompt(prompt)
                     task.wait(0.5)
@@ -856,6 +841,92 @@ Ect:AddToggle({
     end
 })
 
+AutoSkill:AddToggle({
+    Name = "Thunder Clap and Flash",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoThunderClap = state
+
+        if state then
+            task.spawn(function()
+                local player = game:GetService("Players").LocalPlayer
+                local Event = game:GetService("ReplicatedStorage")
+                    .Communication.ServerAndClient.Signals.SignalEvent.Event
+
+                while getgenv().AutoThunderClap do
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then task.wait(1) continue end
+
+                    local mobRoot = nil
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if ok and regions then
+                        local filter = (getgenv().MobNameFilter or ""):lower():match("^%s*(.-)%s*$")
+                        for _, region in ipairs(regions) do
+                            local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                            if not activeNpcs then continue end
+                            for _, folder in ipairs(activeNpcs:GetChildren()) do
+                                for _, npcModel in ipairs(folder:GetChildren()) do
+                                    if not npcModel:IsA("Model") then continue end
+                                    if filter ~= "" and npcModel.Name:lower() ~= filter then continue end
+                                    local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                                    local root = npcModel:FindFirstChild("HumanoidRootPart")
+                                    if h and h.Health > 0 and root then
+                                        mobRoot = root
+                                        break
+                                    end
+                                end
+                                if mobRoot then break end
+                            end
+                            if mobRoot then break end
+                        end
+                    end
+
+
+                    if not mobRoot then
+                        task.wait(1)
+                        continue
+                    end
+
+                    local dist = (hrp.Position - mobRoot.Position).Magnitude
+                    if dist > 50 then
+                        task.wait(1)
+                        continue
+                    end
+
+                    local targetPos = mobRoot.Position
+
+                    Event:FireServer(
+                        "server_skill_controller_signaler",
+                        "Thunder Clap and Flash",
+                        "Hold",
+                        targetPos
+                    )
+                    task.wait(0.1)
+
+                    Event:FireServer(
+                        "server_skill_controller_signaler",
+                        "Thunder Clap and Flash",
+                        "UnHold",
+                        targetPos
+                    )
+                    task.wait(0.1)
+
+                    Event:FireServer(
+                        "server_skill_controller_signaler",
+                        "Thunder Clap and Flash",
+                        "Cancel",
+                        targetPos
+                    )
+
+                    task.wait(12)
+                end
+            end)
+        end
+    end
+})
 getgenv().AutoGame = false
 
 task.spawn(function()
@@ -863,13 +934,12 @@ task.spawn(function()
         task.wait(1)
         if not getgenv().AutoGame then continue end
 
-        local ok, SignalEvent = pcall(function()
-            return require(game:GetService("ReplicatedStorage")
-                .Communication.ServerAndClient.Signals.SignalEvent)
-        end)
-        if not ok or not SignalEvent then continue end
-
-        SignalEvent.ToServer("training_signaler", "Stop", true)
+		local args = {
+			"training_signaler",
+			"Stop",
+			true
+		}
+		game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("ServerAndClient"):WaitForChild("Signals"):WaitForChild("SignalEvent"):WaitForChild("Event"):FireServer(unpack(args))
 
         task.wait(2)
     end
