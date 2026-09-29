@@ -1702,8 +1702,8 @@ local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
 -- Giá trị mặc định
-local WalkSpeed = 150
-local JumpPower = 200
+local WalkSpeed = 55
+local JumpPower = 100
 local isEnabled = false
 
 -- Các connection để có thể disconnect
