@@ -842,7 +842,7 @@ Ect:AddToggle({
 })
 
 AutoSkill:AddToggle({
-    Name = "Thunder Clap and Flash",
+    Name = "Thunder",
     Default = false,
     Callback = function(state)
         getgenv().AutoThunderClap = state
