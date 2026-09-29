@@ -238,129 +238,88 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local Shop = MiscTab:CreateSection({Name = "Đổi item", Side = "Left"})
 	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
 
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-
-local isLocked = false
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode ~= Enum.KeyCode.E then return end
-
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if isLocked then
-        isLocked = false
-        return
-    end
-
-    isLocked = true
-    local lockedCFrame = hrp.CFrame
-
-    task.spawn(function()
-        while isLocked do
-            task.wait(0.01)
-
-            local currentChar = player.Character
-            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-            if not currentHRP then break end
-
-
-            currentHRP.Velocity = Vector3.zero
-            currentHRP.AssemblyLinearVelocity = Vector3.zero
-        end
-    end)
-end)
-
 AutoFarm:AddToggle({
     Name = "Auto Combat",
     Default = false,
-    Callback = function(state)
-        getgenv().AutoCombat = state
+    Callback = function(value)
+        getgenv().AutoCombat = value
 
-        if state then
-            task.spawn(function()
+        if not value then return end
+
+        task.spawn(function()
+            local Event = game:GetService("ReplicatedStorage")
+                :WaitForChild("Communication")
+                :WaitForChild("ServerAndClient")
+                :WaitForChild("Signals")
+                :WaitForChild("SignalEvent")
+                :WaitForChild("Event")
+
+            local combos = {
+                {"Combat_Service", "Regular Katana", 1, false, 0.1315789473684211, false},
+                {"Combat_Service", "Regular Katana", 2, false, 0.06842105263157898, true},
+                {"Combat_Service", "Regular Katana", 3, false, 0.06842105263157898, false},
+                {"Combat_Service", "Regular Katana", 4, false, 0.10526315789473685, false},
+                {"Combat_Service", "Regular Katana", 5, false, 0.07894736842105264, false},
+            }
+
+            local function GetNearestMob(maxDistance)
                 local player = game:GetService("Players").LocalPlayer
-                local Event = game:GetService("ReplicatedStorage")
-                    .Communication.ServerAndClient.Signals.SignalEvent.Event
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return nil end
 
-                local ok, equipped = pcall(function()
-                    return player.Items_Config.Equipped
+                local ok, regions = pcall(function()
+                    return workspace.Humanoids.Regions:GetChildren()
                 end)
+                if not ok or not regions then return nil end
 
+                local nearest, nearestDist = nil, math.huge
 
-                local function GetNearestMob(maxDistance)
-                    local char = player.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then return nil end
+                for _, region in ipairs(regions) do
+                    local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                    if not activeNpcs then continue end
 
-                    local ok, regions = pcall(function()
-                        return workspace.Humanoids.Regions:GetChildren()
-                    end)
-                    if not ok or not regions then return nil end
+                    for _, folder in ipairs(activeNpcs:GetChildren()) do
+                        for _, npcModel in ipairs(folder:GetChildren()) do
+                            if not npcModel:IsA("Model") then continue end
 
-                    local nearest, nearestDist = nil, math.huge
+                            local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                            local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
 
-                    for _, region in ipairs(regions) do
-                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
-                        if not activeNpcs then continue end
-
-                        for _, folder in ipairs(activeNpcs:GetChildren()) do
-                            for _, npcModel in ipairs(folder:GetChildren()) do
-                                if not npcModel:IsA("Model") then continue end
-
-                                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
-                                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
-
-                                if h and h.Health > 0 and rootPart then
-                                    local dist = (hrp.Position - rootPart.Position).Magnitude
-                                    if dist <= maxDistance and dist < nearestDist then
-                                        nearestDist = dist
-                                        nearest = npcModel
-                                    end
+                            if h and h.Health > 0 and rootPart then
+                                local dist = (hrp.Position - rootPart.Position).Magnitude
+                                if dist <= maxDistance and dist < nearestDist then
+                                    nearestDist = dist
+                                    nearest = npcModel
                                 end
                             end
                         end
                     end
-
-                    return nearest
                 end
 
-                while getgenv().AutoCombat do
-                    local mob = GetNearestMob(20)
+                return nearest
+            end
 
-                if ok and equipped then
-                    if equipped.Value ~= 1 then
-                        equipped.Value = 1
-                    end
-                end
-                    if mob then
-                        for i = 1, 5 do
-                            if not getgenv().AutoCombat then break end
-                            if not GetNearestMob(20) then break end
+            while getgenv().AutoCombat do
+                task.wait(0.1)
 
-                            Event:FireServer(
-                                "Combat_Service",
-                                "Regular Katana",
-                                i,
-                                false,
-                                0.2,
-                                false,
-                                nil
-                            )
-                            task.wait(0.2)
-                        end
-						task.wait(0.75)
-                    else
-                        task.wait(0.5)
-                    end
+                local mob = GetNearestMob(20)
+                if not mob then
+                    task.wait(0.5)
+                    continue
                 end
-            end)
-        end
+
+                for _, args in ipairs(combos) do
+                    if not getgenv().AutoCombat then break end
+                    if not GetNearestMob(20) then break end
+
+                    Event:FireServer(unpack(args))
+                    task.wait(args[5])
+                end
+
+                task.wait(0.6)
+            end
+        end)
     end
 })
 
@@ -1730,91 +1689,79 @@ Ect:AddButton({
     end
 })
 
-
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local plr = Players.LocalPlayer
 local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
--- Giá trị mặc định
 local WalkSpeed = 55
-local JumpPower = 100
+local JumpPower = 200
 local isEnabled = false
 
--- Các connection để có thể disconnect
 local walkSpeedConnection
 local jumpPowerConnection
 
--- Hàm cập nhật Humanoid mới khi respawn
+local function applyStats()
+    if not Humanoid then return end
+    Humanoid.WalkSpeed = WalkSpeed
+    Humanoid.JumpPower = JumpPower
+
+    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
+
+    walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if isEnabled and Humanoid.WalkSpeed ~= WalkSpeed then
+            Humanoid.WalkSpeed = WalkSpeed
+        end
+    end)
+
+    jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
+        if isEnabled and Humanoid.JumpPower ~= JumpPower then
+            Humanoid.JumpPower = JumpPower
+        end
+    end)
+end
+
+local function removeStats()
+    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
+end
+
+local function setEnabled(value)
+    isEnabled = value
+    if isEnabled then
+        applyStats()
+    else
+        removeStats()
+    end
+end
+
 local function updateHumanoid(char)
     Character = char
     Humanoid = char:WaitForChild("Humanoid")
-    
-    -- Disconnect các connection cũ nếu có
-    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
-    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
-    
-    -- Áp dụng giá trị nếu đang bật
-    if isEnabled then
-        Humanoid.WalkSpeed = WalkSpeed
-        Humanoid.JumpPower = JumpPower
-        
-        -- Theo dõi khi WalkSpeed hoặc JumpPower bị reset
-        walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-            if Humanoid.WalkSpeed ~= WalkSpeed then
-                Humanoid.WalkSpeed = WalkSpeed
-            end
-        end)
-        
-        jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
-            if Humanoid.JumpPower ~= JumpPower then
-                Humanoid.JumpPower = JumpPower
-            end
-        end)
-    end
+    if isEnabled then applyStats() end
 end
 
 plr.CharacterAdded:Connect(updateHumanoid)
 updateHumanoid(Character)
 
--- Xử lý phím P để bật/tắt
+-- Phím P bật/tắt
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    
     if input.KeyCode == Enum.KeyCode.P then
-        isEnabled = not isEnabled
-        
-        if Humanoid then
-            if isEnabled then
-                -- Bật: áp dụng speed và jump tùy chỉnh
-                Humanoid.WalkSpeed = WalkSpeed
-                Humanoid.JumpPower = JumpPower
-                
-                -- Theo dõi khi bị reset
-                walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-                    if Humanoid.WalkSpeed ~= WalkSpeed then
-                        Humanoid.WalkSpeed = WalkSpeed
-                    end
-                end)
-                
-                jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
-                    if Humanoid.JumpPower ~= JumpPower then
-                        Humanoid.JumpPower = JumpPower
-                    end
-                end)
-            else
-                -- Tắt: ngắt kết nối, để hệ thống tự áp dụng giá trị mặc định
-                if walkSpeedConnection then walkSpeedConnection:Disconnect() end
-                if jumpPowerConnection then jumpPowerConnection:Disconnect() end
-
-            end
-        end
+        setEnabled(not isEnabled)
     end
 end)
 
--- Khi người dùng thay đổi slider
+SpeedAndJump:AddToggle({
+    Name = "Speed & Jump",
+    Default = false,
+    Callback = function(value)
+        setEnabled(value)
+    end
+})
+
 SpeedAndJump:AddSlider({
     Name = "WalkSpeed",
     Value = WalkSpeed,
@@ -1844,4 +1791,3 @@ SpeedAndJump:AddSlider({
         end
     end
 })
-end
