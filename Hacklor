@@ -1824,37 +1824,38 @@ end
 local function applyBurst()
     if not Humanoid then return end
     Humanoid.WalkSpeed = getgenv().BurstSpeed
-    Humanoid.JumpPower = getgenv().BurstJump
 
     if burstWalkConnection then burstWalkConnection:Disconnect() end
-    if burstJumpConnection then burstJumpConnection:Disconnect() end
 
     burstWalkConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
         if isBurstOn and Humanoid.WalkSpeed ~= getgenv().BurstSpeed then
             Humanoid.WalkSpeed = getgenv().BurstSpeed
         end
     end)
-
-    burstJumpConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
-        if isBurstOn and Humanoid.JumpPower ~= getgenv().BurstJump then
-            Humanoid.JumpPower = getgenv().BurstJump
-        end
-    end)
 end
 
 local function removeBurst()
-    isBurstOn = false
     if burstWalkConnection then burstWalkConnection:Disconnect() end
-    if burstJumpConnection then burstJumpConnection:Disconnect() end
-    if isEnabled then applyStats() end
+    isBurstOn = false
+    if isEnabled then
+        if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+        Humanoid.WalkSpeed = WalkSpeed
+        walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if isEnabled and not isBurstOn and Humanoid.WalkSpeed ~= WalkSpeed then
+                Humanoid.WalkSpeed = WalkSpeed
+            end
+        end)
+    end
 end
 
 local function setEnabled(value)
     isEnabled = value
     if isEnabled then
         applyStats()
+        getgenv().AutoBurst = true
     else
         removeStats()
+        getgenv().AutoBurst = false
         if isBurstOn then removeBurst() end
     end
 end
