@@ -238,6 +238,44 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local Shop = MiscTab:CreateSection({Name = "Đổi item", Side = "Left"})
 	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
 
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+
+local isLocked = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode ~= Enum.KeyCode.E then return end
+
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if isLocked then
+        isLocked = false
+        return
+    end
+
+    isLocked = true
+    local lockedCFrame = hrp.CFrame
+
+    task.spawn(function()
+        while isLocked do
+            task.wait(0.01)
+
+            local currentChar = player.Character
+            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
+            if not currentHRP then break end
+
+
+            currentHRP.Velocity = Vector3.zero
+            currentHRP.AssemblyLinearVelocity = Vector3.zero
+        end
+    end)
+end)
+
 AutoFarm:AddToggle({
     Name = "Auto Combat",
     Default = false,
@@ -507,7 +545,7 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                print("Di chuyển tới BossInfo:", center)
+		
                                 hrp.CFrame = CFrame.new(center)
                                 bossSpawnMoved = true
                                 return
@@ -964,7 +1002,6 @@ task.spawn(function()
 
         -- Gửi lệnh thắng trực tiếp
         SignalEvent.ToServer("training_signaler", "Stop", true)
-        print("Đã gửi lệnh thắng Cup Game")
 
         task.wait(2)
     end
@@ -1791,3 +1828,4 @@ SpeedAndJump:AddSlider({
         end
     end
 })
+end
