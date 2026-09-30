@@ -263,7 +263,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     task.spawn(function()
         while isLocked do
-            task.wait(0.01)
+            task.wait(0.1)
 
             local currentChar = player.Character
             local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
@@ -275,6 +275,44 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
     end)
 end)
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+getgenv().AutoHoldClick = false
+
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode ~= Enum.KeyCode.R then return end
+
+    getgenv().AutoHoldClick = not getgenv().AutoHoldClick
+
+    if not getgenv().AutoHoldClick then
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+    end
+end)
+
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if getgenv().AutoHoldClick then
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+        end
+    end
+end)
+
+AutoFarm:AddToggle({
+    Name = "Auto Hold Click",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoHoldClick = state
+        if not state then
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+
+        end
+    end
+})
 
 AutoFarm:AddToggle({
     Name = "Auto Combat",
@@ -600,24 +638,24 @@ AutoFarm:AddToggle({
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
 
-                    -- Nếu AutoChest bật và có chest/drop gần thì dừng hover
+
                     if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
                         task.wait(0.5)
                         continue
                     end
 
-                    -- Kiểm tra mục tiêu đang khoá còn sống không
+
                     if lockedTarget and lockedRoot then
                         local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
                         if h and h.Health > 0 and lockedTarget.Parent then
-                            -- Tiếp tục hover mục tiêu đang khoá
+
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
-                            -- Mục tiêu chết, reset khoá và bossSpawnMoved
+
                             lockedTarget = nil
                             lockedRoot = nil
                             bossSpawnMoved = false
@@ -635,7 +673,6 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    -- Khoá mục tiêu mới
                     lockedTarget = target
                     lockedRoot = rootPart
                     bossSpawnMoved = false
