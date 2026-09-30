@@ -303,7 +303,7 @@ task.spawn(function()
 end)
 
 AutoFarm:AddToggle({
-    Name = "Auto Hold Click",
+    Name = "Auto M1",
     Default = false,
     Callback = function(state)
         getgenv().AutoHoldClick = state
@@ -399,7 +399,6 @@ AutoFarm:AddToggle({
     end
 })
 
-
 local function HasQuest()
     local ok, panel = pcall(function()
         return game:GetService("Players").LocalPlayer.PlayerGui
@@ -445,22 +444,19 @@ local function GetAndWaitForQuest(player)
         end
     end
 
-    if not npcModel then
-        return
-    end
+    if not npcModel then return end
 
     local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
     if not okPivot or not pivot then return end
+
+    -- Di chuyển tới NPC
     hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
     task.wait(0.5)
 
+    -- Gọi lệnh nhận nhiệm vụ một lần
     local Event = game:GetService("ReplicatedStorage")
         .Communication.ServerAndClient.Signals.SignalEvent.Event
-
-    while not HasQuest() do
-        Event:FireServer("AddQuest", getgenv().AutoMissionQuest)
-        task.wait(1)
-    end
+    Event:FireServer("AddQuest", getgenv().AutoMissionQuest)
 end
 
 getgenv().AutoGetMission = false
@@ -492,7 +488,6 @@ AutoMission:AddTextbox({
         getgenv().AutoMissionQuest = value or ""
     end
 })
-
 
 AutoFarm:AddToggle({
     Name = "Auto Farm",
@@ -583,7 +578,6 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-		
                                 hrp.CFrame = CFrame.new(center)
                                 bossSpawnMoved = true
                                 return
@@ -629,6 +623,7 @@ AutoFarm:AddToggle({
                 while getgenv().AutoHoverMob do
                     task.wait(0.01)
 
+                    -- Ưu tiên lấy nhiệm vụ trước, nhân vật sẽ đứng tại NPC
                     if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
                         continue
@@ -638,24 +633,20 @@ AutoFarm:AddToggle({
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
 
-
                     if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
                         task.wait(0.5)
                         continue
                     end
 
-
                     if lockedTarget and lockedRoot then
                         local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
                         if h and h.Health > 0 and lockedTarget.Parent then
-
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
-
                             lockedTarget = nil
                             lockedRoot = nil
                             bossSpawnMoved = false
@@ -686,12 +677,11 @@ AutoFarm:AddToggle({
                     end
 
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                    hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+                    hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                     hrp.Velocity = Vector3.zero
                     hrp.AssemblyLinearVelocity = Vector3.zero
                 end
 
-                -- Reset khi tắt toggle
                 lockedTarget = nil
                 lockedRoot = nil
                 bossSpawnMoved = false
