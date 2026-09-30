@@ -255,15 +255,17 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     if isLocked then
         isLocked = false
+
         return
     end
 
     isLocked = true
     local lockedCFrame = hrp.CFrame
 
+
     task.spawn(function()
         while isLocked do
-            task.wait(0.1)
+            task.wait(0.01)
 
             local currentChar = player.Character
             local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
@@ -272,9 +274,17 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
             currentHRP.Velocity = Vector3.zero
             currentHRP.AssemblyLinearVelocity = Vector3.zero
+
+
+            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
+                CFrame = lockedCFrame
+            })
+            tween:Play()
         end
     end)
 end)
+
+
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
