@@ -459,11 +459,13 @@ local function GetAndWaitForQuest(player)
     local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
     if not okPivot or not pivot then return end
 
-    -- Di chuyển tới NPC
-    hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
-    task.wait(0.5)
 
-    -- Gọi lệnh nhận nhiệm vụ một lần
+    if not getgenv().MissionNPCReached then
+        hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
+        getgenv().MissionNPCReached = true
+        task.wait(0.5)
+    end
+
     local Event = game:GetService("ReplicatedStorage")
         .Communication.ServerAndClient.Signals.SignalEvent.Event
     Event:FireServer("AddQuest", getgenv().AutoMissionQuest)
@@ -478,6 +480,9 @@ AutoMission:AddToggle({
     Default = false,
     Callback = function(state)
         getgenv().AutoGetMission = state
+        if not state then
+            getgenv().MissionNPCReached = false
+        end
     end
 })
 
@@ -633,11 +638,15 @@ AutoFarm:AddToggle({
                 while getgenv().AutoHoverMob do
                     task.wait(0.01)
 
-                    -- Ưu tiên lấy nhiệm vụ trước, nhân vật sẽ đứng tại NPC
+
                     if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
                         continue
                     end
+
+					if HasQuest() then
+						getgenv().MissionNPCReached = false
+					end
 
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1769,12 +1778,22 @@ local plr = Players.LocalPlayer
 local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
-local WalkSpeed = 55
+local WalkSpeed = 150
 local JumpPower = 200
 local isEnabled = false
 
 local walkSpeedConnection
 local jumpPowerConnection
+
+-- Burst variables
+getgenv().AutoBurst = false
+getgenv().BurstOnTime = 0.5
+getgenv().BurstOffTime = 1
+getgenv().BurstSpeed = 150
+getgenv().BurstJump = 200
+local isBurstOn = false
+local burstWalkConnection
+local burstJumpConnection
 
 local function applyStats()
     if not Humanoid then return end
@@ -1785,13 +1804,13 @@ local function applyStats()
     if jumpPowerConnection then jumpPowerConnection:Disconnect() end
 
     walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-        if isEnabled and Humanoid.WalkSpeed ~= WalkSpeed then
+        if isEnabled and not isBurstOn and Humanoid.WalkSpeed ~= WalkSpeed then
             Humanoid.WalkSpeed = WalkSpeed
         end
     end)
 
     jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
-        if isEnabled and Humanoid.JumpPower ~= JumpPower then
+        if isEnabled and not isBurstOn and Humanoid.JumpPower ~= JumpPower then
             Humanoid.JumpPower = JumpPower
         end
     end)
@@ -1802,12 +1821,41 @@ local function removeStats()
     if jumpPowerConnection then jumpPowerConnection:Disconnect() end
 end
 
+local function applyBurst()
+    if not Humanoid then return end
+    Humanoid.WalkSpeed = getgenv().BurstSpeed
+    Humanoid.JumpPower = getgenv().BurstJump
+
+    if burstWalkConnection then burstWalkConnection:Disconnect() end
+    if burstJumpConnection then burstJumpConnection:Disconnect() end
+
+    burstWalkConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if isBurstOn and Humanoid.WalkSpeed ~= getgenv().BurstSpeed then
+            Humanoid.WalkSpeed = getgenv().BurstSpeed
+        end
+    end)
+
+    burstJumpConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
+        if isBurstOn and Humanoid.JumpPower ~= getgenv().BurstJump then
+            Humanoid.JumpPower = getgenv().BurstJump
+        end
+    end)
+end
+
+local function removeBurst()
+    isBurstOn = false
+    if burstWalkConnection then burstWalkConnection:Disconnect() end
+    if burstJumpConnection then burstJumpConnection:Disconnect() end
+    if isEnabled then applyStats() end
+end
+
 local function setEnabled(value)
     isEnabled = value
     if isEnabled then
         applyStats()
     else
         removeStats()
+        if isBurstOn then removeBurst() end
     end
 end
 
@@ -1815,10 +1863,34 @@ local function updateHumanoid(char)
     Character = char
     Humanoid = char:WaitForChild("Humanoid")
     if isEnabled then applyStats() end
+    if isBurstOn then applyBurst() end
 end
 
 plr.CharacterAdded:Connect(updateHumanoid)
 updateHumanoid(Character)
+
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if not getgenv().AutoBurst or not isEnabled then
+            if isBurstOn then removeBurst() end
+            continue
+        end
+
+        isBurstOn = true
+        applyBurst()
+        task.wait(getgenv().BurstOnTime)
+
+        if not getgenv().AutoBurst or not isEnabled then
+            removeBurst()
+            continue
+        end
+
+        removeBurst()
+        task.wait(getgenv().BurstOffTime)
+    end
+end)
 
 -- Phím P bật/tắt
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -1865,4 +1937,3 @@ SpeedAndJump:AddSlider({
         end
     end
 })
-end
