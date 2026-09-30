@@ -1771,92 +1771,63 @@ Ect:AddButton({
         end
     end
 })
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local plr = Players.LocalPlayer
 local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
-local WalkSpeed = 150
+local WalkSpeed = 55
 local JumpPower = 200
 local isEnabled = false
 
+local BurstOnTime = 0.5
+local BurstOffTime = 1
+
 local walkSpeedConnection
 local jumpPowerConnection
-
--- Burst variables
-getgenv().AutoBurst = false
-getgenv().BurstOnTime = 0.5
-getgenv().BurstOffTime = 1
-getgenv().BurstSpeed = 150
-getgenv().BurstJump = 200
 local isBurstOn = false
-local burstWalkConnection
-local burstJumpConnection
 
 local function applyStats()
     if not Humanoid then return end
-    Humanoid.WalkSpeed = WalkSpeed
     Humanoid.JumpPower = JumpPower
 
-    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
     if jumpPowerConnection then jumpPowerConnection:Disconnect() end
-
-    walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-        if isEnabled and not isBurstOn and Humanoid.WalkSpeed ~= WalkSpeed then
-            Humanoid.WalkSpeed = WalkSpeed
-        end
-    end)
-
     jumpPowerConnection = Humanoid:GetPropertyChangedSignal("JumpPower"):Connect(function()
-        if isEnabled and not isBurstOn and Humanoid.JumpPower ~= JumpPower then
+        if isEnabled and Humanoid.JumpPower ~= JumpPower then
             Humanoid.JumpPower = JumpPower
         end
     end)
 end
 
-local function removeStats()
-    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
-    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
-end
-
 local function applyBurst()
     if not Humanoid then return end
-    Humanoid.WalkSpeed = getgenv().BurstSpeed
+    Humanoid.WalkSpeed = WalkSpeed
 
-    if burstWalkConnection then burstWalkConnection:Disconnect() end
-
-    burstWalkConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-        if isBurstOn and Humanoid.WalkSpeed ~= getgenv().BurstSpeed then
-            Humanoid.WalkSpeed = getgenv().BurstSpeed
+    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+    walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if isBurstOn and Humanoid.WalkSpeed ~= WalkSpeed then
+            Humanoid.WalkSpeed = WalkSpeed
         end
     end)
 end
 
 local function removeBurst()
-    if burstWalkConnection then burstWalkConnection:Disconnect() end
-    isBurstOn = false
-    if isEnabled then
-        if walkSpeedConnection then walkSpeedConnection:Disconnect() end
-        Humanoid.WalkSpeed = WalkSpeed
-        walkSpeedConnection = Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-            if isEnabled and not isBurstOn and Humanoid.WalkSpeed ~= WalkSpeed then
-                Humanoid.WalkSpeed = WalkSpeed
-            end
-        end)
-    end
+    if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+end
+
+local function removeStats()
+    if jumpPowerConnection then jumpPowerConnection:Disconnect() end
+    removeBurst()
 end
 
 local function setEnabled(value)
     isEnabled = value
     if isEnabled then
         applyStats()
-        getgenv().AutoBurst = true
     else
+        isBurstOn = false
         removeStats()
-        getgenv().AutoBurst = false
-        if isBurstOn then removeBurst() end
     end
 end
 
@@ -1870,30 +1841,33 @@ end
 plr.CharacterAdded:Connect(updateHumanoid)
 updateHumanoid(Character)
 
-
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if not getgenv().AutoBurst or not isEnabled then
-            if isBurstOn then removeBurst() end
+        if not isEnabled then
+            if isBurstOn then
+                isBurstOn = false
+                removeBurst()
+            end
             continue
         end
 
         isBurstOn = true
         applyBurst()
-        task.wait(getgenv().BurstOnTime)
+        task.wait(BurstOnTime)
 
-        if not getgenv().AutoBurst or not isEnabled then
+        if not isEnabled then
+            isBurstOn = false
             removeBurst()
             continue
         end
 
+        isBurstOn = false
         removeBurst()
-        task.wait(getgenv().BurstOffTime)
+        task.wait(BurstOffTime)
     end
 end)
 
--- Phím P bật/tắt
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.P then
@@ -1918,9 +1892,6 @@ SpeedAndJump:AddSlider({
     Textbox = true,
     Callback = function(state)
         WalkSpeed = state
-        if Humanoid and isEnabled then
-            Humanoid.WalkSpeed = WalkSpeed
-        end
     end
 })
 
