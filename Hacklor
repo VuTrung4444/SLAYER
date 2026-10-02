@@ -503,7 +503,6 @@ AutoMission:AddTextbox({
         getgenv().AutoMissionQuest = value or ""
     end
 })
-
 AutoFarm:AddToggle({
     Name = "Auto Farm",
     Default = false,
@@ -517,7 +516,6 @@ AutoFarm:AddToggle({
                 local player = game:GetService("Players").LocalPlayer
                 local lockedTarget = nil
                 local lockedRoot = nil
-                local bossSpawnMoved = false
 
                 local function GetNearestMob()
                     local char = player.Character
@@ -553,7 +551,8 @@ AutoFarm:AddToggle({
                                     local dist = (hrp.Position - rootPart.Position).Magnitude
                                     local inRange = (range == nil) or (dist <= range)
 
-                                    if inRange and dist < nearestDist then
+                                    -- Chỉ lấy mob trong 300 đơn vị
+                                    if inRange and dist <= 300 and dist < nearestDist then
                                         nearestDist = dist
                                         nearest = npcModel
                                         nearestRoot = rootPart
@@ -564,41 +563,6 @@ AutoFarm:AddToggle({
                     end
 
                     return nearest, nearestRoot
-                end
-
-                local function TryMoveToBossSpawn()
-                    if bossSpawnMoved then return end
-
-                    local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
-                    if filter == "" then return end
-
-                    local char = player.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then return end
-
-                    local ok, regions = pcall(function()
-                        return workspace.Humanoids.Regions:GetChildren()
-                    end)
-                    if not ok or not regions then return end
-
-                    for _, region in ipairs(regions) do
-                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
-                        if not activeNpcs then continue end
-
-                        for _, folder in ipairs(activeNpcs:GetChildren()) do
-                            if folder.Name:lower() ~= filter then continue end
-
-                            local bossInfo = folder:FindFirstChild("BossInfo")
-                            if not bossInfo then continue end
-
-                            local center = bossInfo:GetAttribute("Center")
-                            if center and typeof(center) == "Vector3" then
-                                hrp.CFrame = CFrame.new(center)
-                                bossSpawnMoved = true
-                                return
-                            end
-                        end
-                    end
                 end
 
                 local function HasNearbyChestOrDrop(maxDist)
@@ -638,15 +602,14 @@ AutoFarm:AddToggle({
                 while getgenv().AutoHoverMob do
                     task.wait(0.01)
 
-
                     if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
                         continue
                     end
 
-					if HasQuest() then
-						getgenv().MissionNPCReached = false
-					end
+                    if HasQuest() then
+                        getgenv().MissionNPCReached = false
+                    end
 
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -668,24 +631,18 @@ AutoFarm:AddToggle({
                         else
                             lockedTarget = nil
                             lockedRoot = nil
-                            bossSpawnMoved = false
                         end
                     end
 
                     local target, rootPart = GetNearestMob()
 
                     if not target or not rootPart then
-                        local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
-                        if filter ~= "" then
-                            TryMoveToBossSpawn()
-                        end
                         task.wait(1)
                         continue
                     end
 
                     lockedTarget = target
                     lockedRoot = rootPart
-                    bossSpawnMoved = false
 
                     local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
                     if not humanoid or humanoid.Health <= 0 then
@@ -703,7 +660,6 @@ AutoFarm:AddToggle({
 
                 lockedTarget = nil
                 lockedRoot = nil
-                bossSpawnMoved = false
             end)
         end
     end
