@@ -1258,27 +1258,16 @@ Ect:AddToggle({
     end
 })
 
-Ect:AddToggle({
+--[[Ect:AddToggle({
     Name = "Sun Damage",
     Default = false,
     Callback = function(state)
-        getgenv().NoSunDamage = state
-
-        if state then
-            task.spawn(function()
-                local Event = game:GetService("ReplicatedStorage")
-                    .Communication.ServerAndClient.Signals.SignalFunction.Function
-
-                while getgenv().NoSunDamage do
-                    pcall(function()
-                        Event:InvokeServer("SunDamage", false)
-                    end)
-                    task.wait(20)
-                end
-            end)
-        end
+        local Event = game:GetService("ReplicatedStorage")
+            .Communication.ServerAndClient.Signals.SignalFunction.Function
+        Event:InvokeServer("SunDamage", not state)
     end
-})
+})]]
+
 
 local Noclip = nil
 local Clip = nil
