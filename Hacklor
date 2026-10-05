@@ -285,12 +285,45 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 
-local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
 getgenv().AutoHoldClick = false
+local isCurrentlyHolding = false
+
+local function GetNearestMobInRange(maxDist)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local ok, regions = pcall(function()
+        return workspace.Humanoids.Regions:GetChildren()
+    end)
+    if not ok or not regions then return nil end
+
+    for _, region in ipairs(regions) do
+        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+        if not activeNpcs then continue end
+
+        for _, folder in ipairs(activeNpcs:GetChildren()) do
+            for _, npcModel in ipairs(folder:GetChildren()) do
+                if not npcModel:IsA("Model") then continue end
+
+                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                if h and h.Health > 0 and rootPart then
+                    local dist = (hrp.Position - rootPart.Position).Magnitude
+                    if dist <= maxDist then return npcModel end
+                end
+            end
+        end
+    end
+
+    return nil
+end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -298,8 +331,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     getgenv().AutoHoldClick = not getgenv().AutoHoldClick
 
-    if not getgenv().AutoHoldClick then
+    if not getgenv().AutoHoldClick and isCurrentlyHolding then
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        isCurrentlyHolding = false
     end
 end)
 
@@ -307,20 +341,29 @@ task.spawn(function()
     while true do
         task.wait(0.1)
         if getgenv().AutoHoldClick then
-
             local char = player.Character
             local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-            else
+            local mobInRange = humanoid and humanoid.Health > 0 and GetNearestMobInRange(50) ~= nil
 
+            if mobInRange then
+                if not isCurrentlyHolding then
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                    isCurrentlyHolding = true
+                end
+            else
+                if isCurrentlyHolding then
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                    isCurrentlyHolding = false
+                end
+            end
+        else
+            if isCurrentlyHolding then
                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-                task.wait(1)
+                isCurrentlyHolding = false
             end
         end
     end
 end)
-
 
 player.CharacterAdded:Connect(function(char)
     if not getgenv().AutoHoldClick then return end
@@ -328,7 +371,10 @@ player.CharacterAdded:Connect(function(char)
     humanoid.HealthChanged:Connect(function(health)
         if health > 0 and getgenv().AutoHoldClick then
             task.wait(0.5)
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            if GetNearestMobInRange(50) then
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                isCurrentlyHolding = true
+            end
         end
     end)
 end)
@@ -338,12 +384,12 @@ AutoFarm:AddToggle({
     Default = false,
     Callback = function(state)
         getgenv().AutoHoldClick = state
-        if not state then
+        if not state and isCurrentlyHolding then
             VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+            isCurrentlyHolding = false
         end
     end
 })
-
 
 AutoFarm:AddToggle({
     Name = "Auto Combat",
