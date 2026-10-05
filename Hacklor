@@ -704,6 +704,7 @@ AutoFarm:AddToggle({
                                     if hrp then
                                         hrp.CFrame = CFrame.new(center)
                                         bossSpawnMoved = true
+										task.wait(1)
                                         RestoreEquipped()
                                     end
                                 end
@@ -800,7 +801,7 @@ AutoFarm:AddToggle({
 						continue
 					end
 
-					-- Không tìm mob mới nếu có chest/drop trong 200 đơn vị
+
 					if HasNearbyChestOrDrop(200) then
 						task.wait(0.5)
 						continue
@@ -825,6 +826,7 @@ AutoFarm:AddToggle({
 						if hrp then
 							local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 							hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+							task.wait(1)
 							RestoreEquipped()
 						end
 						continue
