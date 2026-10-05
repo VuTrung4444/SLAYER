@@ -619,7 +619,9 @@ AutoFarm:AddToggle({
                         return player.Items_Config.Equipped
                     end)
                     if ok and equipped then
-                        equipped.Value = 1
+						if equipped.Value ~= 1 then
+                        	equipped.Value = 1
+						end
                     end
                 end
 
