@@ -701,83 +701,94 @@ AutoFarm:AddToggle({
                     return false
                 end
 
-                while getgenv().AutoHoverMob do
-                    task.wait(0.01)
+				while getgenv().AutoHoverMob do
+					task.wait(0.01)
 
-                    if getgenv().AutoGetMission and not HasQuest() then
-                        GetAndWaitForQuest(player)
-                        continue
-                    end
+					local char = player.Character
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if not hrp then task.wait(0.5) continue end
 
-                    if HasQuest() then
-                        getgenv().MissionNPCReached = false
-                    end
+					-- Ưu tiên chest/drop trong 200 đơn vị trước mọi thứ
+					if HasNearbyChestOrDrop(200) then
+						task.wait(0.5)
+						continue
+					end
 
-                    local char = player.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then task.wait(0.5) continue end
+					if getgenv().AutoGetMission and not HasQuest() then
+						GetAndWaitForQuest(player)
+						continue
+					end
 
-                    if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
-                        task.wait(0.5)
-                        continue
-                    end
+					if HasQuest() then
+						getgenv().MissionNPCReached = false
+					end
 
-                    if lockedTarget and lockedRoot then
-                        local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
-                        if h and h.Health > 0 and lockedTarget.Parent then
-                            local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                            hrp.Velocity = Vector3.zero
-                            hrp.AssemblyLinearVelocity = Vector3.zero
-                            continue
-                        else
-                            lockedTarget = nil
-                            lockedRoot = nil
-                            bossSpawnMoved = false
-                        end
-                    end
+					if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
+						task.wait(0.5)
+						continue
+					end
 
-                    local target, rootPart = GetNearestMob()
+					if lockedTarget and lockedRoot then
+						local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
+						if h and h.Health > 0 and lockedTarget.Parent then
+							local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+							hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+							hrp.Velocity = Vector3.zero
+							hrp.AssemblyLinearVelocity = Vector3.zero
+							continue
+						else
+							lockedTarget = nil
+							lockedRoot = nil
+							bossSpawnMoved = false
+						end
+					end
 
-                    if not target or not rootPart then
-                        local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
-                        if filter ~= "" then
-                            TryMoveToBossSpawn()
-                        end
-                        task.wait(1)
-                        continue
-                    end
+					local target, rootPart = GetNearestMob()
 
-                    lockedTarget = target
-                    lockedRoot = rootPart
-                    bossSpawnMoved = false
+					if not target or not rootPart then
+						local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+						if filter ~= "" then
+							TryMoveToBossSpawn()
+						end
+						task.wait(1)
+						continue
+					end
 
-                    local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
-                    if not humanoid or humanoid.Health <= 0 then
-                        lockedTarget = nil
-                        lockedRoot = nil
-                        task.wait(0.1)
-                        continue
-                    end
+					-- Không tìm mob mới nếu có chest/drop trong 200 đơn vị
+					if HasNearbyChestOrDrop(200) then
+						task.wait(0.5)
+						continue
+					end
 
+					lockedTarget = target
+					lockedRoot = rootPart
+					bossSpawnMoved = false
 
-                    local distToMob = (hrp.Position - rootPart.Position).Magnitude
-                    if distToMob > 400 then
-                        SetEquippedForTravel()
-                        hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-                            RestoreEquipped()
-                        end
-                        continue
-                    end
+					local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
+					if not humanoid or humanoid.Health <= 0 then
+						lockedTarget = nil
+						lockedRoot = nil
+						task.wait(0.1)
+						continue
+					end
 
-                    local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                    hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                    hrp.Velocity = Vector3.zero
-                    hrp.AssemblyLinearVelocity = Vector3.zero
-                end
+					local distToMob = (hrp.Position - rootPart.Position).Magnitude
+					if distToMob > 400 then
+						SetEquippedForTravel()
+						hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+						if hrp then
+							local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+							hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+							RestoreEquipped()
+						end
+						continue
+					end
+
+					local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+					hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+					hrp.Velocity = Vector3.zero
+					hrp.AssemblyLinearVelocity = Vector3.zero
+				end
 
                 lockedTarget = nil
                 lockedRoot = nil
