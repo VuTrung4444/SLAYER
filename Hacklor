@@ -325,19 +325,6 @@ local function GetNearestMobInRange(maxDist)
     return nil
 end
 
-local function IsEquipped()
-    local ok, equipped = pcall(function()
-        return player.Items_Config.Equipped
-    end)
-    if ok and equipped then
-        if equipped.Value ~= 1 then
-            equipped.Value = 1
-        end
-        return equipped.Value == 1
-    end
-    return false
-end
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode ~= Enum.KeyCode.R then return end
@@ -351,8 +338,6 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.1)task.spawn(function()
-    while true do
         task.wait(0.1)
         if getgenv().AutoHoldClick then
             local char = player.Character
@@ -362,7 +347,6 @@ task.spawn(function()
                 local mobInRange = GetNearestMobInRange(50) ~= nil
 
                 if mobInRange then
-
                     local ok, equipped = pcall(function()
                         return player.Items_Config.Equipped
                     end)
@@ -376,7 +360,6 @@ task.spawn(function()
                         end
                     end
                 else
-
                     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
                 end
             else
@@ -408,7 +391,6 @@ AutoFarm:AddToggle({
         end
     end
 })
-
 
 AutoFarm:AddToggle({
     Name = "Auto Combat",
