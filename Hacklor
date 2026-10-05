@@ -652,7 +652,7 @@ AutoFarm:AddToggle({
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
                                 local dist = (hrp.Position - center).Magnitude
-                                if dist > 400 then
+                                if dist > 150 then
                                     SetEquippedForTravel()
                                     hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if hrp then
