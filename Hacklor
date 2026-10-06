@@ -1971,12 +1971,12 @@ local plr = Players.LocalPlayer
 local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
-local WalkSpeed = 55
-local JumpPower = 200
+local WalkSpeed = 150
+local JumpPower = 70
 local isEnabled = false
 
 local BurstOnTime = 0.5
-local BurstOffTime = 1
+local BurstOffTime = 0.8
 
 local walkSpeedConnection
 local jumpPowerConnection
