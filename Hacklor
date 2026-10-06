@@ -428,8 +428,31 @@ AutoFarm:AddToggle({
         end)
     end
 })
+local player = game:GetService("Players").LocalPlayer
 
--- Danh sách NPC và Quest
+local function SetEquippedForTravel()
+    local ok, equipped = pcall(function()
+        return player.Items_Config.Equipped
+    end)
+    if ok and equipped then
+        if equipped.Value ~= 4 then
+            equipped.Value = 4
+            task.wait(1.5)
+        end
+    end
+end
+
+local function RestoreEquipped()
+    local ok, equipped = pcall(function()
+        return player.Items_Config.Equipped
+    end)
+    if ok and equipped then
+        if equipped.Value ~= 1 then
+            equipped.Value = 1
+        end
+    end
+end
+
 local NPCData = {
     ["wagwan"] = {
         coordinates = Vector3.new(728.47, 1021.69, -802.12),
@@ -443,7 +466,7 @@ local NPCData = {
         coordinates = Vector3.new(140, 1256.7, -1911.42),
         displayName = "Demon Delroy",
         quests = {
-            ["lvl90"] = "Thyre not welcome here(Lv 90)",
+            ["lvl90"] = "Theyre not welcome here(Lv 90)",
         }
     },
 }
@@ -461,17 +484,12 @@ end
 local function ResolveQuest(npcKey, questInput)
     local data = NPCData[npcKey]
     if not data then return questInput end
-
     local lower = questInput:lower():match("^%s*(.-)%s*$")
-
-
     for shortcut, fullName in pairs(data.quests) do
         if shortcut == lower then
             return fullName
         end
     end
-
-
     return questInput
 end
 
@@ -484,13 +502,11 @@ local function HasQuest()
             .Panel
     end)
     if not ok or not panel then return false end
-
     for _, child in ipairs(panel:GetChildren()) do
         if child.Name ~= "List" and child.Name ~= "UIPadding" then
             return true
         end
     end
-
     return false
 end
 
@@ -507,11 +523,15 @@ local function GetAndWaitForQuest(player)
         local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
 
         if npcData and npcData.coordinates then
-            hrp.CFrame = CFrame.new(npcData.coordinates)
-            getgenv().MissionNPCReached = true
-            task.wait(0.5)
+            SetEquippedForTravel()
+            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(npcData.coordinates)
+                getgenv().MissionNPCReached = true
+                task.wait(1)
+                RestoreEquipped()
+            end
         else
-            -- Tìm trong workspace nếu không có tọa độ cố định
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
             local npcModel = nil
             local ok, regions = pcall(function()
@@ -537,12 +557,16 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
-            getgenv().MissionNPCReached = true
-            task.wait(0.5)
+            SetEquippedForTravel()
+            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
+                getgenv().MissionNPCReached = true
+                task.wait(1)
+                RestoreEquipped()
+            end
         end
     end
-
 
     local npcKey, _ = ResolveNPCName(getgenv().AutoMissionName)
     local resolvedQuest = ResolveQuest(npcKey, getgenv().AutoMissionQuest)
@@ -596,33 +620,9 @@ AutoFarm:AddToggle({
 
         if state then
             task.spawn(function()
-                local player = game:GetService("Players").LocalPlayer
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
-
-                local function SetEquippedForTravel()
-                    local ok, equipped = pcall(function()
-                        return player.Items_Config.Equipped
-                    end)
-                    if ok and equipped then
-                        if equipped.Value ~= 4 then
-                            equipped.Value = 4
-                            task.wait(1.5)
-                        end
-                    end
-                end
-
-                local function RestoreEquipped()
-                    local ok, equipped = pcall(function()
-                        return player.Items_Config.Equipped
-                    end)
-                    if ok and equipped then
-                        if equipped.Value ~= 1 then
-                            equipped.Value = 1
-                        end
-                    end
-                end
 
                 local function HasNearbyChestOrDrop(maxDist)
                     local char = player.Character
@@ -633,10 +633,8 @@ AutoFarm:AddToggle({
                     if chestsFolder then
                         for _, chest in ipairs(chestsFolder:GetChildren()) do
                             if not chest.Name:find("Chest", 1, true) then continue end
-
                             local rootPart = chest:FindFirstChild("RootPart")
                             if not rootPart then continue end
-
                             local prompt = rootPart:FindFirstChild("ChestPrompt")
                             if not prompt then
                                 local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
@@ -645,7 +643,6 @@ AutoFarm:AddToggle({
                             if not prompt then
                                 prompt = chest:FindFirstChild("ChestPrompt", true)
                             end
-
                             if prompt then
                                 local dist = (hrp.Position - rootPart.Position).Magnitude
                                 if dist <= maxDist then return true end
@@ -800,7 +797,7 @@ AutoFarm:AddToggle({
                                     if okPivot and pivot then
                                         local npcPos = pivot.Position + Vector3.new(5, 2, 0)
                                         local distToNPC = (hrp.Position - npcPos).Magnitude
-                                        if distToNPC > 200 then
+                                        if distToNPC > 10 then
                                             SetEquippedForTravel()
                                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                             if hrp then
@@ -808,8 +805,6 @@ AutoFarm:AddToggle({
                                                 task.wait(1)
                                                 RestoreEquipped()
                                             end
-                                        else
-                                            hrp.CFrame = CFrame.new(npcPos)
                                         end
                                     end
                                 end
