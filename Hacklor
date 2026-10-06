@@ -285,6 +285,41 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 
+local Noclip = nil
+local Clip = nil
+
+function noclip()
+    Clip = false
+    local function Nocl()
+        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
+            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
+                    v.CanCollide = false
+                end
+            end
+        end
+        wait(0.21) 
+    end
+    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
+end
+
+function clip()
+    if Noclip then Noclip:Disconnect() end
+    Clip = true
+end
+
+Ect:AddToggle({
+    Name = "Toggle Noclip",
+    Default = false,
+    Callback = function(value)
+        if value then
+            noclip()
+        else
+            clip()
+        end
+    end
+})
+
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
@@ -547,10 +582,12 @@ AutoFarm:AddToggle({
         getgenv().AutoHoverMob = state
         getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
+        getgenv().FarmTweenSpeed = getgenv().FarmTweenSpeed or 40
 
         if state then
             task.spawn(function()
                 local player = game:GetService("Players").LocalPlayer
+                local RunService = game:GetService("RunService")
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
@@ -572,10 +609,87 @@ AutoFarm:AddToggle({
                         return player.Items_Config.Equipped
                     end)
                     if ok and equipped then
-						if equipped.Value ~= 1 then
-                        	equipped.Value = 1
-						end
+                        if equipped.Value ~= 1 then
+                            equipped.Value = 1
+                        end
                     end
+                end
+
+                local function SmoothMoveTo(position, speed)
+                    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if not hrp or not position then return end
+
+                    noclip()
+                    local startPos = hrp.Position
+                    local delta = position - startPos
+                    local duration = delta.Magnitude / speed
+                    local startTime = tick()
+
+                    while tick() - startTime < duration and getgenv().AutoHoverMob do
+                        local t = math.min((tick() - startTime) / duration, 1)
+                        local nextPos = startPos + delta * t
+                        hrp.Velocity = Vector3.zero
+                        hrp.CFrame = CFrame.new(nextPos)
+                        RunService.Heartbeat:Wait()
+                    end
+
+                    hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp and getgenv().AutoHoverMob then
+                        hrp.Velocity = Vector3.zero
+                        hrp.CFrame = CFrame.new(position)
+                    end
+                    clip()
+                end
+
+                -- Phát hiện chest và drop giống auto chest
+                local function HasNearbyChestOrDrop(maxDist)
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return false end
+
+                    local chestsFolder = workspace:FindFirstChild("Chests")
+                    if chestsFolder then
+                        for _, chest in ipairs(chestsFolder:GetChildren()) do
+                            if not chest.Name:find("Chest", 1, true) then continue end
+
+                            -- Tìm prompt theo đúng cách của auto chest
+                            local rootPart = chest:FindFirstChild("RootPart")
+                            if not rootPart then continue end
+
+                            local prompt = rootPart:FindFirstChild("ChestPrompt")
+                            if not prompt then
+                                local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
+                                if anchor then
+                                    prompt = anchor:FindFirstChild("ChestPrompt")
+                                end
+                            end
+                            if not prompt then
+                                prompt = chest:FindFirstChild("ChestPrompt", true)
+                            end
+
+                            -- Chỉ tính là chest nếu có prompt
+                            if prompt then
+                                local dist = (hrp.Position - rootPart.Position).Magnitude
+                                if dist <= maxDist then return true end
+                            end
+                        end
+                    end
+
+                    local lootFolder = workspace:FindFirstChild("LootDrops")
+                    if lootFolder then
+                        for _, drop in ipairs(lootFolder:GetChildren()) do
+                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
+                            if not prompt then continue end
+                            local dropPart = drop:IsA("BasePart") and drop
+                                or drop:FindFirstChildWhichIsA("BasePart", true)
+                            if dropPart then
+                                local dist = (hrp.Position - dropPart.Position).Magnitude
+                                if dist <= maxDist then return true end
+                            end
+                        end
+                    end
+
+                    return false
                 end
 
                 local function GetNearestMob()
@@ -657,9 +771,13 @@ AutoFarm:AddToggle({
                                     SetEquippedForTravel()
                                     hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if hrp then
-                                        hrp.CFrame = CFrame.new(center)
+                                        if dist > 200 then
+                                            SmoothMoveTo(center, getgenv().FarmTweenSpeed)
+                                        else
+                                            hrp.CFrame = CFrame.new(center)
+                                        end
                                         bossSpawnMoved = true
-										task.wait(1)
+                                        task.wait(1)
                                         RestoreEquipped()
                                     end
                                 end
@@ -669,129 +787,136 @@ AutoFarm:AddToggle({
                     end
                 end
 
-                local function HasNearbyChestOrDrop(maxDist)
+                while getgenv().AutoHoverMob do
+                    task.wait(0.01)
+
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then return false end
+                    if not hrp then task.wait(0.5) continue end
 
-                    local chestsFolder = workspace:FindFirstChild("Chests")
-                    if chestsFolder then
-                        for _, chest in ipairs(chestsFolder:GetChildren()) do
-                            if not chest.Name:find("Chest", 1, true) then continue end
-                            local rootPart = chest:FindFirstChild("RootPart")
-                            if rootPart then
-                                local dist = (hrp.Position - rootPart.Position).Magnitude
-                                if dist <= maxDist then return true end
+                    -- Ưu tiên chest/drop trong 200 đơn vị
+                    if HasNearbyChestOrDrop(200) then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    -- Xử lý nhiệm vụ
+                    if getgenv().AutoGetMission and not HasQuest() then
+                        GetAndWaitForQuest(player)
+
+                        -- Cố định tại NPC cho tới khi nhận nhiệm vụ
+                        while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
+                            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                            if hrp and getgenv().MissionNPCReached then
+                                local npcModel = nil
+                                local ok2, regions2 = pcall(function()
+                                    return workspace.Debree.Regions:GetChildren()
+                                end)
+                                if ok2 and regions2 then
+                                    for _, region in ipairs(regions2) do
+                                        local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
+                                        if stationaryNpcs then
+                                            local found = stationaryNpcs:FindFirstChild(getgenv().AutoMissionName)
+                                            if found then
+                                                npcModel = found
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                                if npcModel then
+                                    local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
+                                    if okPivot and pivot then
+                                        local npcPos = pivot.Position + Vector3.new(5, 2, 0)
+                                        local distToNPC = (hrp.Position - npcPos).Magnitude
+                                        if distToNPC > 200 then
+                                            SmoothMoveTo(npcPos, getgenv().FarmTweenSpeed)
+                                        else
+                                            hrp.CFrame = CFrame.new(npcPos)
+                                        end
+                                    end
+                                end
                             end
+                            task.wait(0.5)
+                        end
+                        continue
+                    end
+
+                    if HasQuest() then
+                        getgenv().MissionNPCReached = false
+                    end
+
+                    if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    if lockedTarget and lockedRoot then
+                        local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
+                        if h and h.Health > 0 and lockedTarget.Parent then
+                            local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+                            local distToTarget = (hrp.Position - targetPos).Magnitude
+                            if distToTarget > 200 then
+                                SmoothMoveTo(targetPos, getgenv().FarmTweenSpeed)
+                            else
+                                hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+                                hrp.Velocity = Vector3.zero
+                                hrp.AssemblyLinearVelocity = Vector3.zero
+                            end
+                            continue
+                        else
+                            lockedTarget = nil
+                            lockedRoot = nil
+                            bossSpawnMoved = false
                         end
                     end
 
-                    local lootFolder = workspace:FindFirstChild("LootDrops")
-                    if lootFolder then
-                        for _, drop in ipairs(lootFolder:GetChildren()) do
-                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
-                            if not prompt then continue end
-                            local dropPart = drop:IsA("BasePart") and drop
-                                or drop:FindFirstChildWhichIsA("BasePart", true)
-                            if dropPart then
-                                local dist = (hrp.Position - dropPart.Position).Magnitude
-                                if dist <= maxDist then return true end
-                            end
+                    local target, rootPart = GetNearestMob()
+
+                    if not target or not rootPart then
+                        local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+                        if filter ~= "" then
+                            TryMoveToBossSpawn()
                         end
+                        task.wait(1)
+                        continue
                     end
 
-                    return false
+                    if HasNearbyChestOrDrop(200) then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    lockedTarget = target
+                    lockedRoot = rootPart
+                    bossSpawnMoved = false
+
+                    local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
+                    if not humanoid or humanoid.Health <= 0 then
+                        lockedTarget = nil
+                        lockedRoot = nil
+                        task.wait(0.1)
+                        continue
+                    end
+
+                    local distToMob = (hrp.Position - rootPart.Position).Magnitude
+                    local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+
+                    if distToMob > 200 then
+                        if distToMob > 400 then
+                            SetEquippedForTravel()
+                        end
+                        SmoothMoveTo(targetPos, getgenv().FarmTweenSpeed)
+                        if distToMob > 400 then
+                            task.wait(1)
+                            RestoreEquipped()
+                        end
+                    else
+                        hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+                        hrp.Velocity = Vector3.zero
+                        hrp.AssemblyLinearVelocity = Vector3.zero
+                    end
                 end
-
-				while getgenv().AutoHoverMob do
-					task.wait(0.01)
-
-					local char = player.Character
-					local hrp = char and char:FindFirstChild("HumanoidRootPart")
-					if not hrp then task.wait(0.5) continue end
-
-					-- Ưu tiên chest/drop trong 200 đơn vị trước mọi thứ
-					if HasNearbyChestOrDrop(200) then
-						task.wait(0.5)
-						continue
-					end
-
-					if getgenv().AutoGetMission and not HasQuest() then
-						GetAndWaitForQuest(player)
-						continue
-					end
-
-					if HasQuest() then
-						getgenv().MissionNPCReached = false
-					end
-
-					if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
-						task.wait(0.5)
-						continue
-					end
-
-					if lockedTarget and lockedRoot then
-						local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
-						if h and h.Health > 0 and lockedTarget.Parent then
-							local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-							hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-							hrp.Velocity = Vector3.zero
-							hrp.AssemblyLinearVelocity = Vector3.zero
-							continue
-						else
-							lockedTarget = nil
-							lockedRoot = nil
-							bossSpawnMoved = false
-						end
-					end
-
-					local target, rootPart = GetNearestMob()
-
-					if not target or not rootPart then
-						local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
-						if filter ~= "" then
-							TryMoveToBossSpawn()
-						end
-						task.wait(1)
-						continue
-					end
-
-
-					if HasNearbyChestOrDrop(200) then
-						task.wait(0.5)
-						continue
-					end
-
-					lockedTarget = target
-					lockedRoot = rootPart
-					bossSpawnMoved = false
-
-					local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
-					if not humanoid or humanoid.Health <= 0 then
-						lockedTarget = nil
-						lockedRoot = nil
-						task.wait(0.1)
-						continue
-					end
-
-					local distToMob = (hrp.Position - rootPart.Position).Magnitude
-					if distToMob > 400 then
-						SetEquippedForTravel()
-						hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-						if hrp then
-							local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-							hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-							task.wait(1)
-							RestoreEquipped()
-						end
-						continue
-					end
-
-					local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-					hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-					hrp.Velocity = Vector3.zero
-					hrp.AssemblyLinearVelocity = Vector3.zero
-				end
 
                 lockedTarget = nil
                 lockedRoot = nil
@@ -831,6 +956,16 @@ AutoFarm:AddTextbox({
     Placeholder = "Nhập tên chính xác (vd: Kaiden)",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
+    end
+})
+
+AutoFarm:AddTextbox({
+    Name = "Tốc độ di chuyển",
+    Default = "40",
+    Placeholder = "Studs/giây (mặc định: 40)",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then getgenv().FarmTweenSpeed = num end
     end
 })
 
@@ -1341,40 +1476,6 @@ Ect:AddToggle({
 })]]
 
 
-local Noclip = nil
-local Clip = nil
-
-function noclip()
-    Clip = false
-    local function Nocl()
-        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
-            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
-                    v.CanCollide = false
-                end
-            end
-        end
-        wait(0.21) 
-    end
-    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
-end
-
-function clip()
-    if Noclip then Noclip:Disconnect() end
-    Clip = true
-end
-
-Ect:AddToggle({
-    Name = "Toggle Noclip",
-    Default = false,
-    Callback = function(value)
-        if value then
-            noclip()
-        else
-            clip()
-        end
-    end
-})
 
 Ect:AddButton({
 		Name = "Reset",
