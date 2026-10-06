@@ -285,41 +285,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 
-local Noclip = nil
-local Clip = nil
-
-function noclip()
-    Clip = false
-    local function Nocl()
-        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
-            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
-                    v.CanCollide = false
-                end
-            end
-        end
-        wait(0.21) 
-    end
-    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
-end
-
-function clip()
-    if Noclip then Noclip:Disconnect() end
-    Clip = true
-end
-
-Ect:AddToggle({
-    Name = "Toggle Noclip",
-    Default = false,
-    Callback = function(value)
-        if value then
-            noclip()
-        else
-            clip()
-        end
-    end
-})
-
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
@@ -582,47 +547,35 @@ AutoFarm:AddToggle({
         getgenv().AutoHoverMob = state
         getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
-        getgenv().FarmTweenSpeed = getgenv().FarmTweenSpeed or 40
 
         if state then
             task.spawn(function()
                 local player = game:GetService("Players").LocalPlayer
-                local RunService = game:GetService("RunService")
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
-                local isTweening = false
 
-                local function SmoothMoveTo(position, speed)
-                    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if not hrp or not position then return end
-
-                    isTweening = true
-                    noclip()
-                    local startPos = hrp.Position
-                    local delta = position - startPos
-                    local duration = delta.Magnitude / speed
-                    local startTime = tick()
-
-                    while tick() - startTime < duration and getgenv().AutoHoverMob and isTweening do
-                        local t = math.min((tick() - startTime) / duration, 1)
-                        local nextPos = startPos + delta * t
-                        hrp.Velocity = Vector3.zero
-                        hrp.CFrame = CFrame.new(nextPos)
-                        RunService.Heartbeat:Wait()
+                local function SetEquippedForTravel()
+                    local ok, equipped = pcall(function()
+                        return player.Items_Config.Equipped
+                    end)
+                    if ok and equipped then
+                        if equipped.Value ~= 4 then
+                            equipped.Value = 4
+                            task.wait(1.5)
+                        end
                     end
-
-                    hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp and getgenv().AutoHoverMob and isTweening then
-                        hrp.Velocity = Vector3.zero
-                        hrp.CFrame = CFrame.new(position)
-                    end
-                    isTweening = false
-                    clip()
                 end
 
-                local function CancelTween()
-                    isTweening = false
+                local function RestoreEquipped()
+                    local ok, equipped = pcall(function()
+                        return player.Items_Config.Equipped
+                    end)
+                    if ok and equipped then
+                        if equipped.Value ~= 1 then
+                            equipped.Value = 1
+                        end
+                    end
                 end
 
                 local function HasNearbyChestOrDrop(maxDist)
@@ -747,14 +700,13 @@ AutoFarm:AddToggle({
                             if center and typeof(center) == "Vector3" then
                                 local dist = (hrp.Position - center).Magnitude
                                 if dist > 150 then
+                                    SetEquippedForTravel()
                                     hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if hrp then
-                                        if dist > 200 then
-                                            SmoothMoveTo(center, getgenv().FarmTweenSpeed)
-                                        else
-                                            hrp.CFrame = CFrame.new(center)
-                                        end
+                                        hrp.CFrame = CFrame.new(center)
                                         bossSpawnMoved = true
+                                        task.wait(1)
+                                        RestoreEquipped()
                                     end
                                 end
                                 return
@@ -771,13 +723,11 @@ AutoFarm:AddToggle({
                     if not hrp then task.wait(0.5) continue end
 
                     if HasNearbyChestOrDrop(200) then
-                        CancelTween()
                         task.wait(0.5)
                         continue
                     end
 
                     if getgenv().AutoGetMission and not HasQuest() then
-                        CancelTween()
                         GetAndWaitForQuest(player)
 
                         while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
@@ -805,7 +755,13 @@ AutoFarm:AddToggle({
                                         local npcPos = pivot.Position + Vector3.new(5, 2, 0)
                                         local distToNPC = (hrp.Position - npcPos).Magnitude
                                         if distToNPC > 200 then
-                                            SmoothMoveTo(npcPos, getgenv().FarmTweenSpeed)
+                                            SetEquippedForTravel()
+                                            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                                            if hrp then
+                                                hrp.CFrame = CFrame.new(npcPos)
+                                                task.wait(1)
+                                                RestoreEquipped()
+                                            end
                                         else
                                             hrp.CFrame = CFrame.new(npcPos)
                                         end
@@ -822,7 +778,6 @@ AutoFarm:AddToggle({
                     end
 
                     if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
-                        CancelTween()
                         task.wait(0.5)
                         continue
                     end
@@ -830,11 +785,6 @@ AutoFarm:AddToggle({
                     if lockedTarget and lockedRoot then
                         local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
                         if h and h.Health > 0 and lockedTarget.Parent then
-                            -- Huỷ tween khi đã tìm thấy mob để hover
-                            if isTweening then
-                                CancelTween()
-                                task.wait(0.05)
-                            end
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
@@ -859,7 +809,6 @@ AutoFarm:AddToggle({
                     end
 
                     if HasNearbyChestOrDrop(200) then
-                        CancelTween()
                         task.wait(0.5)
                         continue
                     end
@@ -880,11 +829,15 @@ AutoFarm:AddToggle({
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
                     if distToMob > 200 then
-                        -- Tween tới mob, vòng lặp SmoothMoveTo sẽ dừng nếu isTweening = false
-                        SmoothMoveTo(targetPos, getgenv().FarmTweenSpeed)
+                        SetEquippedForTravel()
+                        hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
+                            task.wait(1)
+                            RestoreEquipped()
+                        end
+                        continue
                     else
-                        -- Đã gần, huỷ tween nếu đang chạy và hover thẳng
-                        if isTweening then CancelTween() end
                         hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                         hrp.Velocity = Vector3.zero
                         hrp.AssemblyLinearVelocity = Vector3.zero
@@ -926,22 +879,11 @@ AutoFarm:AddTextbox({
 AutoFarm:AddTextbox({
     Name = "Tên Mob",
     Default = "",
-    Placeholder = "Nhập tên chính xác (vd: Kaiden)",
+    Placeholder = "Tên (vd: Kaiden)",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
     end
 })
-
-AutoFarm:AddTextbox({
-    Name = "Tốc độ di chuyển",
-    Default = "40",
-    Placeholder = "Studs/giây (mặc định: 40)",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num then getgenv().FarmTweenSpeed = num end
-    end
-})
-
 
 getgenv().AutoChest = false
 
@@ -1450,6 +1392,40 @@ Ect:AddToggle({
 })]]
 
 
+local Noclip = nil
+local Clip = nil
+
+function noclip()
+    Clip = false
+    local function Nocl()
+        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
+            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
+                    v.CanCollide = false
+                end
+            end
+        end
+        wait(0.21) 
+    end
+    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
+end
+
+function clip()
+    if Noclip then Noclip:Disconnect() end
+    Clip = true
+end
+
+Ect:AddToggle({
+    Name = "Toggle Noclip",
+    Default = false,
+    Callback = function(value)
+        if value then
+            noclip()
+        else
+            clip()
+        end
+    end
+})
 
 Ect:AddButton({
 		Name = "Reset",
@@ -1945,12 +1921,12 @@ local plr = Players.LocalPlayer
 local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
-local WalkSpeed = 150
-local JumpPower = 70
+local WalkSpeed = 55
+local JumpPower = 200
 local isEnabled = false
 
 local BurstOnTime = 0.5
-local BurstOffTime = 0.8
+local BurstOffTime = 1
 
 local walkSpeedConnection
 local jumpPowerConnection
