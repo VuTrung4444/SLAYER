@@ -565,7 +565,7 @@ local function GetAndWaitForQuest(player)
 
     while not HasQuest() and getgenv().AutoGetMission and getgenv().AutoHoverMob do
         Event:FireServer("AddQuest", resolvedQuest)
-        task.wait(2)
+        task.wait(4)
     end
 end
 
@@ -834,23 +834,31 @@ AutoFarm:AddToggle({
                     end
 
                     if lockedTarget and lockedRoot then
-                        local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
-                        if h and h.Health > 0 and lockedTarget.Parent then
-                            local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                            hrp.Velocity = Vector3.zero
-                            hrp.AssemblyLinearVelocity = Vector3.zero
-                            continue
-                        else
-                            if lockedTarget then
-                                getgenv().LastBossKillTime = tick()
-                            end
-                            lockedTarget = nil
-                            lockedRoot = nil
-                            bossSpawnMoved = false
-                        end
-                    end
+						local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
+						if h and h.Health > 0 and lockedTarget.Parent then
 
+							local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+							if filter ~= "" and lockedTarget.Name:lower() ~= filter then
+								lockedTarget = nil
+								lockedRoot = nil
+								bossSpawnMoved = false
+								continue
+							end
+
+							local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+							hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
+							hrp.Velocity = Vector3.zero
+							hrp.AssemblyLinearVelocity = Vector3.zero
+							continue
+						else
+							if lockedTarget then
+								getgenv().LastBossKillTime = tick()
+							end
+							lockedTarget = nil
+							lockedRoot = nil
+							bossSpawnMoved = false
+						end
+					end
                     local target, rootPart = GetNearestMob()
 
                     if not target or not rootPart then
