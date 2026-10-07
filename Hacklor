@@ -387,6 +387,38 @@ AutoFarm:AddToggle({
 
 local player = game:GetService("Players").LocalPlayer
 
+local function HasNearbyMob(range)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local ok, regions = pcall(function()
+        return workspace.Humanoids.Regions:GetChildren()
+    end)
+    if not ok or not regions then return false end
+
+    for _, region in ipairs(regions) do
+        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+        if not activeNpcs then continue end
+
+        for _, folder in ipairs(activeNpcs:GetChildren()) do
+            for _, npcModel in ipairs(folder:GetChildren()) do
+                if not npcModel:IsA("Model") then continue end
+
+                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                if h and h.Health > 0 and rootPart then
+                    local dist = (hrp.Position - rootPart.Position).Magnitude
+                    if dist <= range then return true end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
         return player.Items_Config.Equipped
@@ -400,6 +432,7 @@ local function SetEquippedForTravel()
 end
 
 local function RestoreEquipped()
+    if HasNearbyMob(50) then return end
     local ok, equipped = pcall(function()
         return player.Items_Config.Equipped
     end)
