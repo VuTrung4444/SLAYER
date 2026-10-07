@@ -904,15 +904,25 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
-local isLocked = false
 
-local function LockAtPosition(cframe)
+local isLocked = false
+local isAutoLocked = false
+
+local function LockAtPosition(cframe, isAuto)
     isLocked = true
+    isAutoLocked = isAuto or false
     local lockedCFrame = cframe
 
     task.spawn(function()
         while isLocked do
             task.wait(0.01)
+
+
+            if isAutoLocked and getgenv().AutoGetMission and HasQuest() then
+                isLocked = false
+                isAutoLocked = false
+                break
+            end
 
             local currentChar = player.Character
             local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
@@ -950,7 +960,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     LockAtPosition(hrp.CFrame)
 end)
 
--- Giám sát nhiệm vụ: khoá tại NPC khi chưa có nhiệm vụ, mở khi đã nhận
+
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -959,10 +969,8 @@ task.spawn(function()
         if not getgenv().MissionNPCReached then continue end
 
         if HasQuest() then
-            -- Đã có nhiệm vụ, huỷ khoá
             if isLocked then
                 UnlockPosition()
-                print("Đã nhận nhiệm vụ, mở khoá vị trí")
             end
             continue
         end
