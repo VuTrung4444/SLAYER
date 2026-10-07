@@ -603,7 +603,6 @@ AutoMission:AddTextbox({
     end
 })
 
-
 AutoFarm:AddToggle({
     Name = "Auto Farm",
     Default = false,
@@ -617,7 +616,6 @@ AutoFarm:AddToggle({
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
-                local lastBossKillTime = nil
 
                 local function HasNearbyChestOrDrop(maxDist)
                     local char = player.Character
@@ -712,8 +710,7 @@ AutoFarm:AddToggle({
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
 
-                    -- Kiểm tra cooldown 3 phút sau khi mob chết
-                    if lastBossKillTime and (tick() - lastBossKillTime < 180) then
+                    if getgenv().LastBossKillTime and (tick() - getgenv().LastBossKillTime < 180) then
                         return
                     end
 
@@ -845,9 +842,8 @@ AutoFarm:AddToggle({
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
-                            -- Mob vừa chết, ghi lại thời điểm
                             if lockedTarget then
-                                lastBossKillTime = tick()
+                                getgenv().LastBossKillTime = tick()
                             end
                             lockedTarget = nil
                             lockedRoot = nil
@@ -940,6 +936,7 @@ AutoFarm:AddTextbox({
     Placeholder = "Tên (vd: Kaiden)",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
+        getgenv().LastBossKillTime = nil
     end
 })
 
