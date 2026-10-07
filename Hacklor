@@ -316,11 +316,11 @@ AutoFarm:AddToggle({
                 :WaitForChild("Event")
 
             local combos = {
-                {"Combat_Service", "Regular Katana", 1, false, 0.1315789473684211, false},
-                {"Combat_Service", "Regular Katana", 2, false, 0.06842105263157898, true},
-                {"Combat_Service", "Regular Katana", 3, false, 0.06842105263157898, false},
-                {"Combat_Service", "Regular Katana", 4, false, 0.10526315789473685, false},
-                {"Combat_Service", "Regular Katana", 5, false, 0.07894736842105264, false},
+                {"Combat_Service", "Combat", 1, false, 0.1315789473684211, false},
+                {"Combat_Service", "Combat", 2, false, 0.06842105263157898, true},
+                {"Combat_Service", "Combat", 3, false, 0.06842105263157898, false},
+                {"Combat_Service", "Combat", 4, false, 0.10526315789473685, false},
+                {"Combat_Service", "Combat", 5, false, 0.07894736842105264, false},
             }
 
             local function GetNearestMob(maxDistance)
