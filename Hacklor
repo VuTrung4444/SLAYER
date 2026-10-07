@@ -699,7 +699,7 @@ AutoFarm:AddToggle({
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
                                 local dist = (hrp.Position - center).Magnitude
-                                if dist > 150 then
+                                if dist > 100 then
                                     SetEquippedForTravel()
                                     hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if hrp then
@@ -770,7 +770,7 @@ AutoFarm:AddToggle({
 
 								if npcPos then
 									local distToNPC = (hrp.Position - npcPos).Magnitude
-									if distToNPC > 10 then
+									if distToNPC > 100 then
 										SetEquippedForTravel()
 										hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 										if hrp then
