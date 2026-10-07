@@ -238,51 +238,6 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local Shop = MiscTab:CreateSection({Name = "Đổi item", Side = "Left"})
 	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
 
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-
-local isLocked = false
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode ~= Enum.KeyCode.E then return end
-
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if isLocked then
-        isLocked = false
-
-        return
-    end
-
-    isLocked = true
-    local lockedCFrame = hrp.CFrame
-
-
-    task.spawn(function()
-        while isLocked do
-            task.wait(0.01)
-
-            local currentChar = player.Character
-            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-            if not currentHRP then break end
-
-
-            currentHRP.Velocity = Vector3.zero
-            currentHRP.AssemblyLinearVelocity = Vector3.zero
-
-
-            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
-                CFrame = lockedCFrame
-            })
-            tween:Play()
-        end
-    end)
-end)
 
 
 local UserInputService = game:GetService("UserInputService")
@@ -428,6 +383,8 @@ AutoFarm:AddToggle({
         end)
     end
 })
+
+
 local player = game:GetService("Players").LocalPlayer
 
 local function SetEquippedForTravel()
@@ -773,44 +730,59 @@ AutoFarm:AddToggle({
                     if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
 
-                        while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
-                            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                            if hrp and getgenv().MissionNPCReached then
-                                local npcModel = nil
-                                local ok2, regions2 = pcall(function()
-                                    return workspace.Debree.Regions:GetChildren()
-                                end)
-                                if ok2 and regions2 then
-                                    for _, region in ipairs(regions2) do
-                                        local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
-                                        if stationaryNpcs then
-                                            local found = stationaryNpcs:FindFirstChild(getgenv().AutoMissionName)
-                                            if found then
-                                                npcModel = found
-                                                break
-                                            end
-                                        end
-                                    end
-                                end
-                                if npcModel then
-                                    local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
-                                    if okPivot and pivot then
-                                        local npcPos = pivot.Position + Vector3.new(5, 2, 0)
-                                        local distToNPC = (hrp.Position - npcPos).Magnitude
-                                        if distToNPC > 10 then
-                                            SetEquippedForTravel()
-                                            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                                            if hrp then
-                                                hrp.CFrame = CFrame.new(npcPos)
-                                                task.wait(1)
-                                                RestoreEquipped()
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                            task.wait(0.5)
-                        end
+						while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
+							hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+							if hrp and getgenv().MissionNPCReached then
+								-- Dùng toạ độ từ NPCData thay vì tìm model
+								local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
+								local npcPos = nil
+
+								if npcData and npcData.coordinates then
+									npcPos = npcData.coordinates
+								else
+									-- Fallback tìm model
+									local npcModel = nil
+									local ok2, regions2 = pcall(function()
+										return workspace.Debree.Regions:GetChildren()
+									end)
+									if ok2 and regions2 then
+										for _, region in ipairs(regions2) do
+											local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
+											if stationaryNpcs then
+												local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
+												for _, npc in ipairs(stationaryNpcs:GetChildren()) do
+													if npc.Name:lower() == npcName:lower() then
+														npcModel = npc
+														break
+													end
+												end
+											end
+											if npcModel then break end
+										end
+									end
+									if npcModel then
+										local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
+										if okPivot and pivot then
+											npcPos = pivot.Position + Vector3.new(5, 2, 0)
+										end
+									end
+								end
+
+								if npcPos then
+									local distToNPC = (hrp.Position - npcPos).Magnitude
+									if distToNPC > 10 then
+										SetEquippedForTravel()
+										hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+										if hrp then
+											hrp.CFrame = CFrame.new(npcPos)
+											task.wait(1)
+											RestoreEquipped()
+										end
+									end
+								end
+							end
+							task.wait(0.5)
+						end
                         continue
                     end
 
@@ -926,8 +898,123 @@ AutoFarm:AddTextbox({
     end
 })
 
-getgenv().AutoChest = false
 
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+
+local isLocked = false
+
+local function LockAtPosition(cframe)
+    isLocked = true
+    local lockedCFrame = cframe
+
+    task.spawn(function()
+        while isLocked do
+            task.wait(0.01)
+
+            local currentChar = player.Character
+            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
+            if not currentHRP then break end
+
+            currentHRP.Velocity = Vector3.zero
+            currentHRP.AssemblyLinearVelocity = Vector3.zero
+
+            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
+                CFrame = lockedCFrame
+            })
+            tween:Play()
+        end
+    end)
+end
+
+local function UnlockPosition()
+    isLocked = false
+end
+
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode ~= Enum.KeyCode.E then return end
+
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if isLocked then
+        UnlockPosition()
+        return
+    end
+
+    LockAtPosition(hrp.CFrame)
+end)
+
+-- Giám sát nhiệm vụ: khoá tại NPC khi chưa có nhiệm vụ, mở khi đã nhận
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+
+        if not getgenv().AutoGetMission then continue end
+        if not getgenv().MissionNPCReached then continue end
+
+        if HasQuest() then
+            -- Đã có nhiệm vụ, huỷ khoá
+            if isLocked then
+                UnlockPosition()
+                print("Đã nhận nhiệm vụ, mở khoá vị trí")
+            end
+            continue
+        end
+
+
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName or "")
+        local npcPos = nil
+
+        if npcData and npcData.coordinates then
+            npcPos = npcData.coordinates
+        else
+            local npcModel = nil
+            local ok, regions = pcall(function()
+                return workspace.Debree.Regions:GetChildren()
+            end)
+            if ok and regions then
+                for _, region in ipairs(regions) do
+                    local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
+                    if stationaryNpcs then
+                        local npcName = npcData and npcData.displayName or (getgenv().AutoMissionName or "")
+                        for _, npc in ipairs(stationaryNpcs:GetChildren()) do
+                            if npc.Name:lower() == npcName:lower() then
+                                npcModel = npc
+                                break
+                            end
+                        end
+                    end
+                    if npcModel then break end
+                end
+            end
+            if npcModel then
+                local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
+                if okPivot and pivot then
+                    npcPos = pivot.Position + Vector3.new(5, 2, 0)
+                end
+            end
+        end
+
+        if npcPos then
+            if not isLocked then
+                LockAtPosition(CFrame.new(npcPos))
+            end
+        end
+    end
+end)
+
+
+getgenv().AutoChest = false
 Ect:AddToggle({
     Name = "Auto Chest",
     Default = false,
