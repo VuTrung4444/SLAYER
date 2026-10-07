@@ -415,8 +415,8 @@ local NPCData = {
         coordinates = Vector3.new(728.47, 1021.69, -802.12),
         displayName = "Wagwan",
         quests = {
-            ["lv10"] = "Quest Name Lv 10",
-            ["lv20"] = "Quest Name Lv 20",
+            ["lv40"] = "I will clear out his guards(Lv 40)",
+            ["lv50"] = "I will take care of Hoyuzo(Lv 50)",
         }
     },
     ["demon delroy"] = {
