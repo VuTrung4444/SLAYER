@@ -565,7 +565,7 @@ local function GetAndWaitForQuest(player)
 
     while not HasQuest() and getgenv().AutoGetMission and getgenv().AutoHoverMob do
         Event:FireServer("AddQuest", resolvedQuest)
-        task.wait(1)
+        task.wait(2)
     end
 end
 
