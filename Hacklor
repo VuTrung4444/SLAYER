@@ -527,10 +527,13 @@ local function GetAndWaitForQuest(player)
 
     local npcKey, _ = ResolveNPCName(getgenv().AutoMissionName)
     local resolvedQuest = ResolveQuest(npcKey, getgenv().AutoMissionQuest)
-
     local Event = game:GetService("ReplicatedStorage")
         .Communication.ServerAndClient.Signals.SignalEvent.Event
-    Event:FireServer("AddQuest", resolvedQuest)
+
+    while not HasQuest() and getgenv().AutoGetMission and getgenv().AutoHoverMob do
+        Event:FireServer("AddQuest", resolvedQuest)
+        task.wait(4)
+    end
 end
 
 getgenv().AutoGetMission = false
