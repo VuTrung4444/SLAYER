@@ -483,8 +483,6 @@ local function GetAndWaitForQuest(player)
             if hrp then
                 hrp.CFrame = CFrame.new(npcData.coordinates)
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
             end
         else
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
@@ -517,8 +515,6 @@ local function GetAndWaitForQuest(player)
             if hrp then
                 hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
             end
         end
     end
@@ -762,11 +758,9 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    -- Giống Auto Farm 1: gọi GetAndWaitForQuest trước
                     if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
 
-                        -- Lock cứng tại NPC trong khi chờ quest
                         while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                             if hrp and getgenv().MissionNPCReached then
@@ -802,13 +796,12 @@ AutoFarm:AddToggle({
                                 end
 
                                 if npcPos then
-                                    -- Lock cứng mỗi tick, không kiểm tra distance
                                     hrp.CFrame = CFrame.new(npcPos)
                                     hrp.Velocity = Vector3.zero
                                     hrp.AssemblyLinearVelocity = Vector3.zero
                                 end
                             end
-                            task.wait(0.01)
+                            task.wait(2)
                         end
                         continue
                     end
@@ -876,7 +869,7 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    if HasNearbyChestOrDrop(200) then
+                    if HasNearbyChestOrDrop(500) then
                         task.wait(0.5)
                         continue
                     end
