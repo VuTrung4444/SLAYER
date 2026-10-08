@@ -453,7 +453,7 @@ local function EquipIfMobNearby(range)
         return player.Items_Config.Equipped
     end)
     if not ok or not equipped then return end
-    if equipped.Value = 1 or equipped.Value = 2 then return end
+    if equipped.Value == 1 or equipped.Value == 2 then return end
  
     if GetNearestMobInRange(range) then
         equipped.Value = 1
