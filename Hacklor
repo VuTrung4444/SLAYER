@@ -2173,4 +2173,28 @@ SpeedAndJump:AddSlider({
         end
     end
 })
+
+local VirtualUser = game:GetService("VirtualUser")
+	local Players = game:GetService("Players")
+
+
+
+	local function naturalWaitTime()
+		local baseTime = 600
+		local offset = math.random(-120, 180)
+		return math.max(300, baseTime + offset)
+	end
+
+	spawn(function()
+		while true do
+			wait(naturalWaitTime()) 
+			if Players.LocalPlayer and Players.LocalPlayer.Character then
+				VirtualUser:CaptureController()
+				VirtualUser:ClickButton2(Vector2.new(math.random(100, 1820), math.random(100, 980))) 
+			end
+		end
+	end)
+
+
+    
 end
