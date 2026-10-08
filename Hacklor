@@ -461,6 +461,23 @@ local function EquipIfMobNearby(range)
 end
 
 local NPCData = {
+            
+    ["tom"] = {
+        coordinates = Vector3.new(506.4, 1123.89, -970.59),
+        displayName = "Tom",
+        quests = {
+            ["lv10"] = "Ill drive the bears back(Lv 10)",
+            ["lv18"] = "Ill fell the Mother Bear(Lv 18)",
+        }
+    },
+    ["chaka"] = {
+        coordinates = Vector3.new(471.3, 1148.49, -1260.67),
+        displayName = "Chaka",
+        quests = {
+            ["lv26"] = "Ill clear out his subordinates(Lv 26)",
+            ["lv34"] = "Ill deal with Kaiden(Lv 34)",
+        }
+    },
     ["wagwan"] = {
         coordinates = Vector3.new(728.47, 1021.69, -802.12),
         displayName = "Wagwan",
