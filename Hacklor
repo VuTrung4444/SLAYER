@@ -627,18 +627,23 @@ AutoFarm:AddToggle({
         getgenv().AutoHoverMob = state
         getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
+        getgenv().BossKillTimes = getgenv().BossKillTimes or {}
 
         if state then
             task.spawn(function()
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
+                local bossWaitStart = nil
+                local BOSS_COOLDOWN = 180
+                local BOSS_WAIT_TIME = 4 -- tăng từ 2 để boss kịp spawn
 
- local AllBossList = {
+                local AllBossList = {
                     "Akazo", "Douma", "Tengai", "Obari", "Yahari",
                     "Sumari", "Giyen", "Rengu", "Fujiko", "Shinora",
                     "Saneri", "Reaper"
                 }
+
                 local allBossIndex = 1
 
                 local function IsAllBossMode()
@@ -657,8 +662,6 @@ AutoFarm:AddToggle({
                     bossSpawnMoved = false
                     bossWaitStart = nil
                 end
-
-
 
                 local function HasNearbyChestOrDrop(maxDist)
                     local char = player.Character
@@ -715,7 +718,7 @@ AutoFarm:AddToggle({
 
                     local nearest, nearestRoot = nil, nil
                     local nearestDist = math.huge
-                    local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
+                    local filter = GetCurrentBossFilter()
                     local range = getgenv().MobSearchRange
 
                     for _, region in ipairs(regions) do
@@ -753,16 +756,20 @@ AutoFarm:AddToggle({
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
 
-                    if getgenv().LastBossKillTime and (tick() - getgenv().LastBossKillTime < 180) then
-                        return
-                    end
-
-                    local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
-                    if filter == "" then return end
-
+                    -- FIX 1: tự lấy hrp, không dùng biến nil
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
+
+                    local filter = GetCurrentBossFilter()
+                    if filter == "" then return end
+
+                    -- FIX 2: cooldown theo từng boss, đang cooldown thì chuyển boss khác
+                    local lastKill = getgenv().BossKillTimes[filter]
+                    if lastKill and (tick() - lastKill < BOSS_COOLDOWN) then
+                        if IsAllBossMode() then AdvanceAllBoss() end
+                        return
+                    end
 
                     local ok, regions = pcall(function()
                         return workspace.Humanoids.Regions:GetChildren()
@@ -784,17 +791,24 @@ AutoFarm:AddToggle({
                                 local dist = (hrp.Position - center).Magnitude
                                 if dist > 100 then
                                     SetEquippedForTravel()
-                                    hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                                    if hrp then
-                                        hrp.CFrame = CFrame.new(center)
-                                        bossSpawnMoved = true
+                                    local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                                    if newHrp then
+                                        newHrp.CFrame = CFrame.new(center)
+                                    end
+                                    task.spawn(function()
                                         task.wait(1)
                                         RestoreEquipped()
-                                    end
+                                    end)
                                 end
+                                bossSpawnMoved = true
+                                bossWaitStart = tick()
                                 return
                             end
                         end
+                    end
+
+                    if IsAllBossMode() then
+                        AdvanceAllBoss()
                     end
                 end
 
@@ -805,7 +819,8 @@ AutoFarm:AddToggle({
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
 
-                    if HasNearbyChestOrDrop(200) then
+                    -- FIX 3: chỉ chờ chest/drop khi Auto Chest đang bật
+                    if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
                         task.wait(0.5)
                         continue
                     end
@@ -871,14 +886,8 @@ AutoFarm:AddToggle({
                         getgenv().MissionNPCReached = false
                     end
 
-                    if getgenv().AutoChest and HasNearbyChestOrDrop(1000) then
-                        task.wait(0.5)
-                        continue
-                    end
-
-
- if bossSpawnMoved and bossWaitStart and IsAllBossMode() then
-                        if tick() - bossWaitStart >= 2 then
+                    if bossSpawnMoved and bossWaitStart and IsAllBossMode() then
+                        if tick() - bossWaitStart >= BOSS_WAIT_TIME then
                             local target, _ = GetNearestMob()
                             if not target then
                                 AdvanceAllBoss()
@@ -891,7 +900,7 @@ AutoFarm:AddToggle({
                         continue
                     end
 
- if lockedTarget and lockedRoot then
+                    if lockedTarget and lockedRoot then
                         local h = lockedTarget:FindFirstChildWhichIsA("Humanoid", true)
                         if h and h.Health > 0 and lockedTarget.Parent then
                             local filter = GetCurrentBossFilter()
@@ -908,8 +917,10 @@ AutoFarm:AddToggle({
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
+                            -- boss/mob đã chết: ghi thời gian theo tên rồi mới chuyển boss
                             if lockedTarget then
-                                getgenv().LastBossKillTime = tick()
+                                local killedName = lockedTarget.Name:lower()
+                                getgenv().BossKillTimes[killedName] = tick()
                                 if IsAllBossMode() then
                                     AdvanceAllBoss()
                                 end
@@ -931,7 +942,7 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    if HasNearbyChestOrDrop(200) then
+                    if getgenv().AutoChest and HasNearbyChestOrDrop(200) then
                         task.wait(0.5)
                         continue
                     end
@@ -1008,7 +1019,7 @@ AutoFarm:AddTextbox({
     Placeholder = "Tên (vd: Kaiden) hoặc allboss",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
-        getgenv().LastBossKillTime = nil
+        getgenv().BossKillTimes = {}
     end
 })
 
@@ -2304,4 +2315,24 @@ SpeedAndJump:AddSlider({
         end
     end
 })
+
+local VirtualUser = game:GetService("VirtualUser")
+	local Players = game:GetService("Players")
+
+	-- Hàm tạo thời gian random kiểu tự nhiên, có lúc nhanh lúc chậm
+	local function naturalWaitTime()
+		local baseTime = 600 -- 10 phút
+		local offset = math.random(-120, 180) -- lệch ngẫu nhiên từ -2 phút đến +3 phút
+		return math.max(300, baseTime + offset) -- đảm bảo tối thiểu 5 phút
+	end
+
+	spawn(function()
+		while true do
+			wait(naturalWaitTime()) 
+			if Players.LocalPlayer and Players.LocalPlayer.Character then
+				VirtualUser:CaptureController()
+				VirtualUser:ClickButton2(Vector2.new(math.random(100, 1820), math.random(100, 980))) 
+			end
+		end
+	end)
 end
