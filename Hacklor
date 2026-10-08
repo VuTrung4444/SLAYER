@@ -385,8 +385,71 @@ AutoFarm:AddToggle({
 })
 
 
-local player = game:GetService("Players").LocalPlayer
 
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+
+
+local isLocked = false
+local isAutoLocked = false
+
+local function LockAtPosition(cframe, isAuto)
+    isLocked = true
+    isAutoLocked = isAuto or false
+    local lockedCFrame = cframe
+
+    task.spawn(function()
+        while isLocked do
+            task.wait(0.01)
+
+
+            if isAutoLocked and getgenv().AutoGetMission and HasQuest() then
+                isLocked = false
+                isAutoLocked = false
+                break
+            end
+
+            local currentChar = player.Character
+            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
+            if not currentHRP then break end
+
+            currentHRP.Velocity = Vector3.zero
+            currentHRP.AssemblyLinearVelocity = Vector3.zero
+
+            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
+                CFrame = lockedCFrame
+            })
+            tween:Play()
+        end
+    end)
+end
+
+local function UnlockPosition()
+    isLocked = false
+end
+
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode ~= Enum.KeyCode.E then return end
+
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if isLocked then
+        UnlockPosition()
+        return
+    end
+
+    LockAtPosition(hrp.CFrame)
+end)
+
+
+
+local player = game:GetService("Players").LocalPlayer
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
         return player.Items_Config.Equipped
@@ -530,13 +593,13 @@ local function GetAndWaitForQuest(player)
         local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
 
         if npcData and npcData.coordinates then
-            SetEquippedForTravel()
             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
                 hrp.CFrame = CFrame.new(npcData.coordinates)
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
+                LockAtPosition(hrp.CFrame)
+                task.wait(2)
+                UnlockPosition()
             end
         else
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
@@ -564,13 +627,13 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            SetEquippedForTravel()
             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
                 hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
+                LockAtPosition(hrp.CFrame)
+                task.wait(2)
+                UnlockPosition()
             end
         end
     end
@@ -790,14 +853,14 @@ AutoFarm:AddToggle({
                             if center and typeof(center) == "Vector3" then
                                 local dist = (hrp.Position - center).Magnitude
                                 if dist > 100 then
-                                    SetEquippedForTravel()
                                     local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if newHrp then
                                         newHrp.CFrame = CFrame.new(center)
                                     end
                                     task.spawn(function()
-                                        task.wait(1)
-                                        RestoreEquipped()
+                                    	LockAtPosition(hrp.CFrame)
+                                        task.wait(2)
+                                        UnlockPosition()
                                     end)
                                 end
                                 bossSpawnMoved = true
@@ -867,12 +930,12 @@ AutoFarm:AddToggle({
                                 if npcPos then
                                     local distToNPC = (hrp.Position - npcPos).Magnitude
                                     if distToNPC > 100 then
-                                        SetEquippedForTravel()
                                         hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                         if hrp then
                                             hrp.CFrame = CFrame.new(npcPos)
-                                            task.wait(1)
-                                            RestoreEquipped()
+                                            LockAtPosition(hrp.CFrame)
+                                            task.wait(2)
+                                            UnlockPosition()
                                         end
                                     end
                                 end
@@ -964,12 +1027,12 @@ AutoFarm:AddToggle({
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
                     if distToMob > 200 then
-                        SetEquippedForTravel()
                         hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-                            task.wait(1)
-                            RestoreEquipped()
+                            LockAtPosition(hrp.CFrame)
+                            task.wait(2)
+                            UnlockPosition()
                         end
                         continue
                     else
@@ -1023,129 +1086,6 @@ AutoFarm:AddTextbox({
     end
 })
 
-
-
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-
-
-local isLocked = false
-local isAutoLocked = false
-
-local function LockAtPosition(cframe, isAuto)
-    isLocked = true
-    isAutoLocked = isAuto or false
-    local lockedCFrame = cframe
-
-    task.spawn(function()
-        while isLocked do
-            task.wait(0.01)
-
-
-            if isAutoLocked and getgenv().AutoGetMission and HasQuest() then
-                isLocked = false
-                isAutoLocked = false
-                break
-            end
-
-            local currentChar = player.Character
-            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-            if not currentHRP then break end
-
-            currentHRP.Velocity = Vector3.zero
-            currentHRP.AssemblyLinearVelocity = Vector3.zero
-
-            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
-                CFrame = lockedCFrame
-            })
-            tween:Play()
-        end
-    end)
-end
-
-local function UnlockPosition()
-    isLocked = false
-end
-
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode ~= Enum.KeyCode.E then return end
-
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if isLocked then
-        UnlockPosition()
-        return
-    end
-
-    LockAtPosition(hrp.CFrame)
-end)
-
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-
-        if not getgenv().AutoGetMission then continue end
-        if not getgenv().MissionNPCReached then continue end
-
-        if HasQuest() then
-            if isLocked then
-                UnlockPosition()
-            end
-            continue
-        end
-
-
-        local char = player.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-
-        local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName or "")
-        local npcPos = nil
-
-        if npcData and npcData.coordinates then
-            npcPos = npcData.coordinates
-        else
-            local npcModel = nil
-            local ok, regions = pcall(function()
-                return workspace.Debree.Regions:GetChildren()
-            end)
-            if ok and regions then
-                for _, region in ipairs(regions) do
-                    local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
-                    if stationaryNpcs then
-                        local npcName = npcData and npcData.displayName or (getgenv().AutoMissionName or "")
-                        for _, npc in ipairs(stationaryNpcs:GetChildren()) do
-                            if npc.Name:lower() == npcName:lower() then
-                                npcModel = npc
-                                break
-                            end
-                        end
-                    end
-                    if npcModel then break end
-                end
-            end
-            if npcModel then
-                local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
-                if okPivot and pivot then
-                    npcPos = pivot.Position + Vector3.new(5, 2, 0)
-                end
-            end
-        end
-
-        if npcPos then
-            if not isLocked then
-                LockAtPosition(CFrame.new(npcPos))
-            end
-        end
-    end
-end)
 
 
 getgenv().AutoChest = false
