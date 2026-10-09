@@ -288,6 +288,7 @@ player.CharacterAdded:Connect(function(char)
     end)
 end)
 
+
 AutoFarm:AddToggle({
     Name = "Auto M1",
     Default = false,
@@ -399,67 +400,6 @@ local function SetEquippedForTravel()
     end
 end
 
-local function RestoreEquipped()
-    local ok, equipped = pcall(function()
-        return player.Items_Config.Equipped
-    end)
-    if ok and equipped then
-    	task.wait(1)
-        if equipped.Value ~= 1 then
-            equipped.Value = 1
-        end
-    end
-end
-
-local function GetNearestMobInRange(range)
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
- 
-    local ok, regions = pcall(function()
-        return workspace.Humanoids.Regions:GetChildren()
-    end)
-    if not ok or not regions then return nil end
- 
-    local nearest = nil
-    local nearestDist = math.huge
- 
-    for _, region in ipairs(regions) do
-        local activeNpcs = region:FindFirstChild("ActiveNpcs")
-        if not activeNpcs then continue end
- 
-        for _, folder in ipairs(activeNpcs:GetChildren()) do
-            for _, npcModel in ipairs(folder:GetChildren()) do
-                if not npcModel:IsA("Model") then continue end
- 
-                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
-                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
- 
-                if h and h.Health > 0 and rootPart then
-                    local dist = (hrp.Position - rootPart.Position).Magnitude
-                    if dist <= range and dist < nearestDist then
-                        nearestDist = dist
-                        nearest = npcModel
-                    end
-                end
-            end
-        end
-    end
- 
-    return nearest
-end
- 
-local function EquipIfMobNearby(range)
-    local ok, equipped = pcall(function()
-        return player.Items_Config.Equipped
-    end)
-    if not ok or not equipped then return end
-    if equipped.Value == 1 or equipped.Value == 2 then return end
- 
-    if GetNearestMobInRange(range) then
-        equipped.Value = 1
-    end
-end
 
 local NPCData = {
             
@@ -580,9 +520,9 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            SetEquippedForTravel()
             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
+            	SetEquippedForTravel()
                 hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
                 getgenv().MissionNPCReached = true
             end
@@ -596,7 +536,7 @@ local function GetAndWaitForQuest(player)
 
     while not HasQuest() and getgenv().AutoGetMission and getgenv().AutoHoverMob do
         Event:FireServer("AddQuest", resolvedQuest)
-        task.wait(4)
+        task.wait(2)
     end
 end
 
@@ -633,7 +573,6 @@ AutoMission:AddTextbox({
         getgenv().AutoMissionQuest = value or ""
     end
 })
-
 
 AutoFarm:AddToggle({
     Name = "Auto Farm",
@@ -765,6 +704,44 @@ AutoFarm:AddToggle({
                     return nearest, nearestRoot
                 end
 
+                local function GetNPCPos()
+                    local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
+                    if not npcData then return nil, nil, nil end
+
+                    if npcData.coordinates then
+                        return npcKey, npcData, npcData.coordinates
+                    end
+
+                    local npcModel = nil
+                    local ok, regions = pcall(function()
+                        return workspace.Debree.Regions:GetChildren()
+                    end)
+                    if ok and regions then
+                        for _, region in ipairs(regions) do
+                            local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
+                            if stationaryNpcs then
+                                local npcName = npcData.displayName or getgenv().AutoMissionName
+                                for _, npc in ipairs(stationaryNpcs:GetChildren()) do
+                                    if npc.Name:lower() == npcName:lower() then
+                                        npcModel = npc
+                                        break
+                                    end
+                                end
+                            end
+                            if npcModel then break end
+                        end
+                    end
+
+                    if npcModel then
+                        local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
+                        if okPivot and pivot then
+                            return npcKey, npcData, pivot.Position + Vector3.new(5, 2, 0)
+                        end
+                    end
+
+                    return npcKey, npcData, nil
+                end
+
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
 
@@ -792,16 +769,11 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                    SetEquippedForTravel()
-                                    print("0")
-                                    local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                                    if newHrp then
-                                    	print("1")
-                                        SetEquippedForTravel()
-                                        newHrp.CFrame = CFrame.new(center)
-                                        task.spawn(function()
-                                        end)
-                                    end
+                                SetEquippedForTravel()
+                                local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                                if newHrp then
+                                    newHrp.CFrame = CFrame.new(center)
+                                end
                                 bossSpawnMoved = true
                                 bossWaitStart = tick()
                                 return
@@ -809,11 +781,60 @@ AutoFarm:AddToggle({
                         end
                     end
 
-                    -- Không tìm thấy BossInfo → chuyển boss tiếp theo nếu allboss
                     if IsAllBossMode() then
                         AdvanceAllBoss()
                     end
                 end
+
+                local function GetNearestMobInRange(range)
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return nil end
+            
+                local ok, regions = pcall(function()
+                    return workspace.Humanoids.Regions:GetChildren()
+                end)
+                if not ok or not regions then return nil end
+            
+                local nearest = nil
+                local nearestDist = math.huge
+            
+                for _, region in ipairs(regions) do
+                    local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                    if not activeNpcs then continue end
+            
+                    for _, folder in ipairs(activeNpcs:GetChildren()) do
+                        for _, npcModel in ipairs(folder:GetChildren()) do
+                            if not npcModel:IsA("Model") then continue end
+            
+                            local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                            local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+            
+                            if h and h.Health > 0 and rootPart then
+                                local dist = (hrp.Position - rootPart.Position).Magnitude
+                                if dist <= range and dist < nearestDist then
+                                    nearestDist = dist
+                                    nearest = npcModel
+                                end
+                            end
+                        end
+                    end
+                end
+            
+                return nearest
+            end
+            
+            local function EquipIfMobNearby(range)
+                local ok, equipped = pcall(function()
+                    return player.Items_Config.Equipped
+                end)
+                if not ok or not equipped then return end
+                if equipped.Value == 1 or equipped.Value == 2 then return end
+            
+                if GetNearestMobInRange(range) then
+                    equipped.Value = 1
+                end
+            end
 
                 while getgenv().AutoHoverMob do
                     task.wait(0.01)
@@ -821,21 +842,19 @@ AutoFarm:AddToggle({
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
+                    EquipIfMobNearby(50)
 
+                    -- Ưu tiên 1: Chest
                     if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
                         task.wait(0.5)
                         continue
                     end
 
-                    if getgenv().AutoGetMission and not HasQuest() then
+                    -- Ưu tiên 2: Nhận quest nếu chưa có
+                        if getgenv().AutoGetMission and not HasQuest() then
                         GetAndWaitForQuest(player)
 
                         while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
-                            if HasNearbyChestOrDrop(200) then
-                                task.wait(0.5)
-                                continue
-                            end
-
                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                             if hrp and getgenv().MissionNPCReached then
                                 local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
@@ -872,6 +891,7 @@ AutoFarm:AddToggle({
                                 end
 
                                 if npcPos then
+                                	SetEquippedForTravel()
                                     hrp.CFrame = CFrame.new(npcPos)
                                     hrp.Velocity = Vector3.zero
                                     hrp.AssemblyLinearVelocity = Vector3.zero
@@ -886,12 +906,19 @@ AutoFarm:AddToggle({
                         getgenv().MissionNPCReached = false
                     end
 
-                    -- AllBoss: chờ boss spawn sau khi đã di chuyển tới BossInfo
+                    -- Ưu tiên 3: Di chuyển tới mob / hover / bossInfo (chỉ khi đã có quest hoặc không bật AutoGetMission)
+
+                    -- Chest check trước khi di chuyển tới mob
+                    if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
+                        task.wait(0.5)
+                        continue
+                    end
+
+                    -- Chờ boss spawn
                     if bossSpawnMoved and bossWaitStart then
                         if tick() - bossWaitStart >= BOSS_WAIT_TIME then
                             local target, _ = GetNearestMob()
                             if not target then
-                                -- Hết thời gian chờ, không có boss → chuyển boss tiếp
                                 if IsAllBossMode() then
                                     AdvanceAllBoss()
                                 else
@@ -899,10 +926,10 @@ AutoFarm:AddToggle({
                                     bossWaitStart = nil
                                 end
                             else
-                                -- Boss đã spawn
                                 bossWaitStart = nil
                             end
                         end
+                        continue
                     end
 
                     if lockedTarget and lockedRoot then
@@ -916,14 +943,18 @@ AutoFarm:AddToggle({
                                 continue
                             end
 
+                            -- Chest check khi đang hover
+                            if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
+                                task.wait(0.5)
+                                continue
+                            end
+
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            print("4")
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
-                            -- Mob/boss chết hoặc humanoid biến mất
                             if IsAllBossMode() then
                                 AdvanceAllBoss()
                             end
@@ -964,12 +995,10 @@ AutoFarm:AddToggle({
                         SetEquippedForTravel()
                         hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                        	print("4.5")
                             hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
                         end
                         continue
                     else
-                        print("5")
                         hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                         hrp.Velocity = Vector3.zero
                         hrp.AssemblyLinearVelocity = Vector3.zero
