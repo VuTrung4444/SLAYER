@@ -649,7 +649,6 @@ AutoFarm:AddToggle({
                 local lockedRoot = nil
                 local bossSpawnMoved = false
                 local bossWaitStart = nil
-                local lastKnownPos = nil
                 local BOSS_WAIT_TIME = 4
 
                 local AllBossList = {
@@ -800,7 +799,6 @@ AutoFarm:AddToggle({
                                     	print("1")
                                         SetEquippedForTravel()
                                         newHrp.CFrame = CFrame.new(center)
-                                        lastKnownPos = center
                                         task.spawn(function()
                                         end)
                                     end
@@ -823,14 +821,6 @@ AutoFarm:AddToggle({
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
-
-                    -- Khoá tại lastKnownPos khi không có mục tiêu
-                    if lastKnownPos and not lockedTarget then
-                    	print("2")
-                        hrp.CFrame = CFrame.new(lastKnownPos)
-                        hrp.Velocity = Vector3.zero
-                        hrp.AssemblyLinearVelocity = Vector3.zero
-                    end
 
                     if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
                         task.wait(0.5)
@@ -882,7 +872,6 @@ AutoFarm:AddToggle({
                                 end
 
                                 if npcPos then
-                                    lastKnownPos = npcPos
                                     hrp.CFrame = CFrame.new(npcPos)
                                     hrp.Velocity = Vector3.zero
                                     hrp.AssemblyLinearVelocity = Vector3.zero
@@ -928,7 +917,6 @@ AutoFarm:AddToggle({
                             end
 
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            lastKnownPos = targetPos
                             print("4")
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
@@ -978,11 +966,9 @@ AutoFarm:AddToggle({
                         if hrp then
                         	print("4.5")
                             hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-                            lastKnownPos = targetPos
                         end
                         continue
                     else
-                        lastKnownPos = targetPos
                         print("5")
                         hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                         hrp.Velocity = Vector3.zero
@@ -994,7 +980,6 @@ AutoFarm:AddToggle({
                 lockedRoot = nil
                 bossSpawnMoved = false
                 bossWaitStart = nil
-                lastKnownPos = nil
             end)
         end
     end
