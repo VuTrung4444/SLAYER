@@ -316,11 +316,11 @@ AutoFarm:AddToggle({
                 :WaitForChild("Event")
 
             local combos = {
-                {"Combat_Service", "Combat", 1, false, 0.1315789473684211, false},
-                {"Combat_Service", "Combat", 2, false, 0.06842105263157898, true},
-                {"Combat_Service", "Combat", 3, false, 0.06842105263157898, false},
-                {"Combat_Service", "Combat", 4, false, 0.10526315789473685, false},
-                {"Combat_Service", "Combat", 5, false, 0.07894736842105264, false},
+                {"Combat_Service", "Combat", 1, false, 0.13, false},
+                {"Combat_Service", "Combat", 2, false, 0, true},
+                {"Combat_Service", "Combat", 3, false, 0, false},
+                {"Combat_Service", "Combat", 4, false, 0, false},
+                {"Combat_Service", "Combat", 5, false, 0.14999999999999997, false},
             }
 
             local function GetNearestMob(maxDistance)
@@ -404,6 +404,7 @@ local function RestoreEquipped()
         return player.Items_Config.Equipped
     end)
     if ok and equipped then
+    	task.wait(1)
         if equipped.Value ~= 1 then
             equipped.Value = 1
         end
@@ -552,8 +553,6 @@ local function GetAndWaitForQuest(player)
             if hrp then
                 hrp.CFrame = CFrame.new(npcData.coordinates)
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
             end
         else
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
@@ -586,8 +585,6 @@ local function GetAndWaitForQuest(player)
             if hrp then
                 hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
                 getgenv().MissionNPCReached = true
-                task.wait(1)
-                RestoreEquipped()
             end
         end
     end
@@ -637,6 +634,7 @@ AutoMission:AddTextbox({
     end
 })
 
+
 AutoFarm:AddToggle({
     Name = "Auto Farm",
     Default = false,
@@ -644,7 +642,6 @@ AutoFarm:AddToggle({
         getgenv().AutoHoverMob = state
         getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
-        getgenv().BossKillTimes = getgenv().BossKillTimes or {}
 
         if state then
             task.spawn(function()
@@ -652,15 +649,14 @@ AutoFarm:AddToggle({
                 local lockedRoot = nil
                 local bossSpawnMoved = false
                 local bossWaitStart = nil
-                local BOSS_COOLDOWN = 180
-                local BOSS_WAIT_TIME = 4 -- tăng từ 2 để boss kịp spawn
+                local lastKnownPos = nil
+                local BOSS_WAIT_TIME = 4
 
                 local AllBossList = {
                     "Akazo", "Douma", "Tengai", "Obari", "Yahari",
                     "Sumari", "Giyen", "Rengu", "Fujiko", "Shinora",
                     "Saneri", "Reaper"
                 }
-
                 local allBossIndex = 1
 
                 local function IsAllBossMode()
@@ -773,20 +769,12 @@ AutoFarm:AddToggle({
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
 
-                    -- FIX 1: tự lấy hrp, không dùng biến nil
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
 
                     local filter = GetCurrentBossFilter()
                     if filter == "" then return end
-
-                    -- FIX 2: cooldown theo từng boss, đang cooldown thì chuyển boss khác
-                    local lastKill = getgenv().BossKillTimes[filter]
-                    if lastKill and (tick() - lastKill < BOSS_COOLDOWN) then
-                        if IsAllBossMode() then AdvanceAllBoss() end
-                        return
-                    end
 
                     local ok, regions = pcall(function()
                         return workspace.Humanoids.Regions:GetChildren()
@@ -805,18 +793,17 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                local dist = (hrp.Position - center).Magnitude
-                                if dist > 100 then
                                     SetEquippedForTravel()
+                                    print("0")
                                     local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                                     if newHrp then
+                                    	print("1")
+                                        SetEquippedForTravel()
                                         newHrp.CFrame = CFrame.new(center)
+                                        lastKnownPos = center
+                                        task.spawn(function()
+                                        end)
                                     end
-                                    task.spawn(function()
-                                        task.wait(1)
-                                        RestoreEquipped()
-                                    end)
-                                end
                                 bossSpawnMoved = true
                                 bossWaitStart = tick()
                                 return
@@ -824,6 +811,7 @@ AutoFarm:AddToggle({
                         end
                     end
 
+                    -- Không tìm thấy BossInfo → chuyển boss tiếp theo nếu allboss
                     if IsAllBossMode() then
                         AdvanceAllBoss()
                     end
@@ -836,7 +824,14 @@ AutoFarm:AddToggle({
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
 
-                    -- FIX 3: chỉ chờ chest/drop khi Auto Chest đang bật
+                    -- Khoá tại lastKnownPos khi không có mục tiêu
+                    if lastKnownPos and not lockedTarget then
+                    	print("2")
+                        hrp.CFrame = CFrame.new(lastKnownPos)
+                        hrp.Velocity = Vector3.zero
+                        hrp.AssemblyLinearVelocity = Vector3.zero
+                    end
+
                     if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
                         task.wait(0.5)
                         continue
@@ -846,6 +841,11 @@ AutoFarm:AddToggle({
                         GetAndWaitForQuest(player)
 
                         while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
+                            if HasNearbyChestOrDrop(200) then
+                                task.wait(0.5)
+                                continue
+                            end
+
                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                             if hrp and getgenv().MissionNPCReached then
                                 local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
@@ -882,19 +882,13 @@ AutoFarm:AddToggle({
                                 end
 
                                 if npcPos then
-                                    local distToNPC = (hrp.Position - npcPos).Magnitude
-                                    if distToNPC > 100 then
-                                        SetEquippedForTravel()
-                                        hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                                        if hrp then
-                                            hrp.CFrame = CFrame.new(npcPos)
-                                            task.wait(1)
-                                            RestoreEquipped()
-                                        end
-                                    end
+                                    lastKnownPos = npcPos
+                                    hrp.CFrame = CFrame.new(npcPos)
+                                    hrp.Velocity = Vector3.zero
+                                    hrp.AssemblyLinearVelocity = Vector3.zero
                                 end
                             end
-                            task.wait(0.5)
+                            task.wait(0.1)
                         end
                         continue
                     end
@@ -903,18 +897,23 @@ AutoFarm:AddToggle({
                         getgenv().MissionNPCReached = false
                     end
 
-                    if bossSpawnMoved and bossWaitStart and IsAllBossMode() then
+                    -- AllBoss: chờ boss spawn sau khi đã di chuyển tới BossInfo
+                    if bossSpawnMoved and bossWaitStart then
                         if tick() - bossWaitStart >= BOSS_WAIT_TIME then
                             local target, _ = GetNearestMob()
                             if not target then
-                                AdvanceAllBoss()
+                                -- Hết thời gian chờ, không có boss → chuyển boss tiếp
+                                if IsAllBossMode() then
+                                    AdvanceAllBoss()
+                                else
+                                    bossSpawnMoved = false
+                                    bossWaitStart = nil
+                                end
                             else
+                                -- Boss đã spawn
                                 bossWaitStart = nil
                             end
                         end
-                        hrp.Velocity = Vector3.zero
-                        hrp.AssemblyLinearVelocity = Vector3.zero
-                        continue
                     end
 
                     if lockedTarget and lockedRoot then
@@ -929,18 +928,16 @@ AutoFarm:AddToggle({
                             end
 
                             local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
+                            lastKnownPos = targetPos
+                            print("4")
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
                             hrp.AssemblyLinearVelocity = Vector3.zero
                             continue
                         else
-                            -- boss/mob đã chết: ghi thời gian theo tên rồi mới chuyển boss
-                            if lockedTarget then
-                                local killedName = lockedTarget.Name:lower()
-                                getgenv().BossKillTimes[killedName] = tick()
-                                if IsAllBossMode() then
-                                    AdvanceAllBoss()
-                                end
+                            -- Mob/boss chết hoặc humanoid biến mất
+                            if IsAllBossMode() then
+                                AdvanceAllBoss()
                             end
                             lockedTarget = nil
                             lockedRoot = nil
@@ -956,11 +953,6 @@ AutoFarm:AddToggle({
                             TryMoveToBossSpawn()
                         end
                         task.wait(1)
-                        continue
-                    end
-
-                    if getgenv().AutoChest and HasNearbyChestOrDrop(200) then
-                        task.wait(0.5)
                         continue
                     end
 
@@ -980,20 +972,21 @@ AutoFarm:AddToggle({
                     local distToMob = (hrp.Position - rootPart.Position).Magnitude
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
-                    if distToMob > 200 then
+                    if distToMob > 50 then
                         SetEquippedForTravel()
                         hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
+                        	print("4.5")
                             hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-                            task.wait(1)
-                            RestoreEquipped()
+                            lastKnownPos = targetPos
                         end
                         continue
                     else
+                        lastKnownPos = targetPos
+                        print("5")
                         hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                         hrp.Velocity = Vector3.zero
                         hrp.AssemblyLinearVelocity = Vector3.zero
-                        EquipIfMobNearby(50)
                     end
                 end
 
@@ -1001,6 +994,7 @@ AutoFarm:AddToggle({
                 lockedRoot = nil
                 bossSpawnMoved = false
                 bossWaitStart = nil
+                lastKnownPos = nil
             end)
         end
     end
@@ -1036,7 +1030,6 @@ AutoFarm:AddTextbox({
     Placeholder = "Tên (vd: Kaiden) hoặc allboss",
     Callback = function(value)
         getgenv().MobNameFilter = value or ""
-        getgenv().BossKillTimes = {}
     end
 })
 
