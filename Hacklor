@@ -1269,7 +1269,6 @@ Ect:AddToggle({
 
                             hrp = GetHRP()
                             if not hrp then break end
-
                             hrp.CFrame = CFrame.new(data.part.Position + Vector3.new(3, 3, 0))
                             task.wait(0.2)
 
@@ -1332,6 +1331,7 @@ Ect:AddToggle({
                     if not prompt or not rootPart then continue end
 
                     if not getgenv().ChestReached then
+                    	SetEquippedForTravel()
                         hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
                         task.wait(0.3)
                     end
