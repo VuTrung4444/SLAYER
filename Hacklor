@@ -1461,6 +1461,7 @@ AutoSkill:AddToggle({
         end
     end
 })
+
 getgenv().AutoGame = false
 
 task.spawn(function()
@@ -1487,25 +1488,159 @@ Ect:AddToggle({
     end
 })
 
---[[getgenv().AutoCupGame = false
+local autoFishing = false
+
+local player = game:GetService("Players").LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local debree = workspace:WaitForChild("Debree")
+
+local function SimulateInput(isPressed)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, isPressed, game, 1)
+    end)
+end
+
+local function ClickOnce()
+    SimulateInput(true)
+    task.wait(0.5)
+    SimulateInput(false)
+end
+
+local function FindFishingCatch()
+    for _, obj in ipairs(debree:GetChildren()) do
+        if obj.Name:match("^FishingCatch_") then return obj end
+    end
+end
+
+local function FindFishingLine()
+    for _, obj in ipairs(debree:GetChildren()) do
+        if obj.Name:match("^FishingLine_") then return obj end
+    end
+end
+
+local function FindUI()
+    local misc = player.PlayerGui:FindFirstChild("Misc")
+    if not misc then return end
+    local canvas = misc:FindFirstChild("CanvasGroup")
+    if not canvas then return end
+    local frame = canvas:FindFirstChild("Frame")
+    if not frame then return end
+    local bar = frame:FindFirstChild("Bar")
+    local tracker = frame:FindFirstChild("tracker")
+    if not bar or not tracker then return end
+    local holder = canvas:FindFirstChild("Progressholder")
+    if not holder then return end
+    local label = holder:FindFirstChild("TextLabel")
+    if not label then return end
+    return bar, tracker, label
+end
+
+local function FindPrompt(catch)
+    for _, d in ipairs(catch:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then return d end
+    end
+end
+
+local function CheckAndRecast()
+    local fishingLine = FindFishingLine()
+    if not fishingLine then return end
+
+    local startTick = tick()
+    local persistent = true
+    while tick() - startTick < 1.5 do
+        task.wait(0.1)
+        if not autoFishing then return end
+        if not fishingLine.Parent then
+            persistent = false
+            break
+        end
+    end
+    if not persistent and autoFishing then ClickOnce() end
+end
+
+local function HandleAfterMinigame()
+    local fishingCatch
+    local t = tick()
+    repeat
+        task.wait(0.1)
+        fishingCatch = FindFishingCatch()
+    until fishingCatch or tick() - t >= 3 or not autoFishing
+
+    if not autoFishing then return end
+
+    if fishingCatch then
+        local t2 = tick()
+        while autoFishing and fishingCatch.Parent and tick() - t2 < 5 do
+            local prompt = FindPrompt(fishingCatch)
+            if prompt and prompt.Enabled then
+                fireproximityprompt(prompt)
+            end
+            task.wait(0.2)
+        end
+    end
+
+    if not autoFishing then return end
+    ClickOnce()
+    CheckAndRecast()
+end
 
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        if not getgenv().AutoCupGame then continue end
+        task.wait(1)
+        if not autoFishing then continue end
 
-        local ok, SignalEvent = pcall(function()
-            return require(game:GetService("ReplicatedStorage")
-                .Communication.ServerAndClient.Signals.SignalEvent)
-        end)
-        if not ok or not SignalEvent then continue end
+        local bar, tracker, progressLabel = FindUI()
+        if not bar then
+            if not FindFishingLine() then
+                ClickOnce()
+                task.wait(0.5)
+                CheckAndRecast()
+            end
+            continue
+        end
 
-        -- Gửi lệnh thắng trực tiếp
-        SignalEvent.ToServer("training_signaler", "Stop", true)
+        while autoFishing do
+            task.wait(0.1)
 
-        task.wait(2)
+            bar, tracker, progressLabel = FindUI()
+            if not bar then
+                SimulateInput(false)
+                HandleAfterMinigame()
+                break
+            end
+
+            local progressValue = tonumber(progressLabel.Text:match("(%d+)%%"))
+            if progressValue and progressValue >= 100 then
+                SimulateInput(false)
+                HandleAfterMinigame()
+                break
+            end
+
+            SimulateInput(tracker.Position.Y.Scale <= bar.Position.Y.Scale)
+        end
+
+        SimulateInput(false)
     end
-end)]]
+end)
+
+
+Ect:AddToggle({
+    Name = "Auto Fishing",
+    Default = false,
+    Callback = function(value)
+        autoFishing = value
+        if value then
+            task.spawn(function()
+                ClickOnce()
+                CheckAndRecast()
+            end)
+        else
+            SimulateInput(false)
+        end
+    end
+})
+
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
