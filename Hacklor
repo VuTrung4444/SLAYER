@@ -239,13 +239,16 @@ if game.PlaceId ~= mainMenuPlaceID then
 	local Craft = MiscTab:CreateSection({Name = "Craft item", Side = "Right"})
 
 
-
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
 getgenv().AutoHoldClick = false
+
+local function GetRandomHoldTime()
+    return math.random(40, 80) / 10 -- 4.0 đến 8.0 giây
+end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -261,21 +264,44 @@ end)
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if getgenv().AutoHoldClick then
+        if not getgenv().AutoHoldClick then continue end
 
-            local char = player.Character
-            local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-            else
+        local char = player.Character
+        local humanoid = char and char:FindFirstChildWhichIsA("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+            task.wait(1)
+            continue
+        end
 
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+        local holdTime = GetRandomHoldTime()
+
+        local elapsed = 0
+        while elapsed < holdTime do
+            task.wait(0.1)
+            elapsed = elapsed + 0.1
+
+            if not getgenv().AutoHoldClick then
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                break
+            end
+
+            local currentChar = player.Character
+            local currentHumanoid = currentChar and currentChar:FindFirstChildWhichIsA("Humanoid")
+            if not currentHumanoid or currentHumanoid.Health <= 0 then
                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
                 task.wait(1)
+                break
             end
         end
+
+        if not getgenv().AutoHoldClick then continue end
+
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        task.wait(0.1)
     end
 end)
-
 
 player.CharacterAdded:Connect(function(char)
     if not getgenv().AutoHoldClick then return end
@@ -287,7 +313,6 @@ player.CharacterAdded:Connect(function(char)
         end
     end)
 end)
-
 
 AutoFarm:AddToggle({
     Name = "Auto M1",
