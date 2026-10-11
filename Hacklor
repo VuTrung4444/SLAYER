@@ -424,6 +424,9 @@ local function SetEquippedForTravel()
 end
 
 -- ===== [THÊM] Kiểm tra rương dùng chung + cổng teleport duy nhất =====
+-- [THÊM] Rương đã fireproximity và đã có loot rơi ra => coi là đã mở, bỏ qua ở cả farm lẫn autochest
+getgenv().OpenedChests = setmetatable({}, {__mode = "k"})
+
 local function HasNearbyChestOrDrop(maxDist)
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -432,6 +435,7 @@ local function HasNearbyChestOrDrop(maxDist)
     local chestsFolder = workspace:FindFirstChild("Chests")
     if chestsFolder then
         for _, chest in ipairs(chestsFolder:GetChildren()) do
+            if getgenv().OpenedChests[chest] then continue end
             if not chest.Name:find("Chest", 1, true) then continue end
             local rootPart = chest:FindFirstChild("RootPart")
             if not rootPart then continue end
@@ -480,10 +484,18 @@ task.spawn(function()
     end
 end)
 
--- Cổng teleport duy nhất của farm/quest: kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s)
+local function IsTravelEquipped()
+    local ok, equipped = pcall(function()
+        return player.Items_Config.Equipped
+    end)
+    return ok and equipped ~= nil and equipped.Value == 4
+end
+
+
 local function SafeTeleport(cf, zeroVelocity)
     if ChestBlocked() then return false end
     SetEquippedForTravel()
+    if not IsTravelEquipped() then return false end
     if ChestBlocked() then return false end
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -819,7 +831,6 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                -- [SỬA] dùng SafeTeleport, chỉ đặt cờ khi teleport thành công
                                 if SafeTeleport(CFrame.new(center)) then
                                     bossSpawnMoved = true
                                     bossWaitStart = tick()
@@ -1041,13 +1052,19 @@ AutoFarm:AddToggle({
                     local distToMob = (hrp.Position - rootPart.Position).Magnitude
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
-                    if distToMob > 5 then
+                    if distToMob > 20 then
                         -- [SỬA] dùng SafeTeleport
-                        SafeTeleport(CFrame.new(targetPos, rootPart.Position))
+                        if not SafeTeleport(CFrame.new(targetPos, rootPart.Position)) then
+                            lockedTarget = nil
+                            lockedRoot = nil
+                        end
                         continue
                     else
                         -- [SỬA] dùng SafeTeleport (có đặt velocity = 0 như bản gốc)
-                        SafeTeleport(CFrame.new(targetPos, lockedRoot.Position), true)
+                        if not SafeTeleport(CFrame.new(targetPos, lockedRoot.Position), true) then
+                            lockedTarget = nil
+                            lockedRoot = nil
+                        end
                     end
                 end
 
@@ -1269,6 +1286,7 @@ Ect:AddToggle({
                     local nearest, nearestDist = nil, math.huge
 
                     for _, chest in ipairs(chestsFolder:GetChildren()) do
+                        if getgenv().OpenedChests[chest] then continue end
                         if not chest.Name:find("Chest", 1, true) then continue end
 
                         local prompt, rootPart = GetChestPrompt(chest)
@@ -1337,6 +1355,8 @@ Ect:AddToggle({
                     end
                 end
 
+                local lastFiredChest = nil
+
                 while getgenv().AutoChest do
                     task.wait(0.5)
 
@@ -1367,6 +1387,12 @@ Ect:AddToggle({
                     end
 
                     if hasDrops then
+                        -- [THÊM] Có loot rơi ra sau khi fire rương => rương vừa fire đã mở, không quay lại nữa
+                        if lastFiredChest then
+                            getgenv().OpenedChests[lastFiredChest] = true
+                            lastFiredChest = nil
+                            getgenv().ChestReached = false
+                        end
                         CollectAllDrops()
                         continue
                     end
@@ -1388,6 +1414,7 @@ Ect:AddToggle({
                     end
 
                     fireproximityprompt(prompt)
+                    lastFiredChest = chest
                     task.wait(0.5)
 
                     if chest.Parent then
