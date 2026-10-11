@@ -410,9 +410,7 @@ AutoFarm:AddToggle({
     end
 })
 
-
 local player = game:GetService("Players").LocalPlayer
-
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
         return player.Items_Config.Equipped
@@ -424,6 +422,80 @@ local function SetEquippedForTravel()
         end
     end
 end
+
+-- ===== [THÊM] Kiểm tra rương dùng chung + cổng teleport duy nhất =====
+local function HasNearbyChestOrDrop(maxDist)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local chestsFolder = workspace:FindFirstChild("Chests")
+    if chestsFolder then
+        for _, chest in ipairs(chestsFolder:GetChildren()) do
+            if not chest.Name:find("Chest", 1, true) then continue end
+            local rootPart = chest:FindFirstChild("RootPart")
+            if not rootPart then continue end
+            local prompt = rootPart:FindFirstChild("ChestPrompt")
+            if not prompt then
+                local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
+                if anchor then prompt = anchor:FindFirstChild("ChestPrompt") end
+            end
+            if not prompt then
+                prompt = chest:FindFirstChild("ChestPrompt", true)
+            end
+            if prompt then
+                local dist = (hrp.Position - rootPart.Position).Magnitude
+                if dist <= maxDist then return true end
+            end
+        end
+    end
+
+    local lootFolder = workspace:FindFirstChild("LootDrops")
+    if lootFolder then
+        for _, drop in ipairs(lootFolder:GetChildren()) do
+            local prompt = drop:FindFirstChild("LootDropPrompt", true)
+            if not prompt then continue end
+            local dropPart = drop:IsA("BasePart") and drop
+                or drop:FindFirstChildWhichIsA("BasePart", true)
+            if dropPart then
+                local dist = (hrp.Position - dropPart.Position).Magnitude
+                if dist <= maxDist then return true end
+            end
+        end
+    end
+
+    return false
+end
+
+local function ChestBlocked()
+    return getgenv().AutoChest and HasNearbyChestOrDrop(500)
+end
+
+-- Cờ cache cho vòng lặp khoá vị trí (chạy 0.01s nên không quét workspace trực tiếp)
+getgenv().ChestPresentCached = false
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        getgenv().ChestPresentCached = ChestBlocked() and true or false
+    end
+end)
+
+-- Cổng teleport duy nhất của farm/quest: kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s)
+local function SafeTeleport(cf, zeroVelocity)
+    if ChestBlocked() then return false end
+    SetEquippedForTravel()
+    if ChestBlocked() then return false end
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    root.CFrame = cf
+    if zeroVelocity then
+        root.Velocity = Vector3.zero
+        root.AssemblyLinearVelocity = Vector3.zero
+    end
+    return true
+end
+-- ===== [HẾT PHẦN THÊM] =====
 
 
 local NPCData = {
@@ -513,12 +585,9 @@ local function GetAndWaitForQuest(player)
         local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
 
         if npcData and npcData.coordinates then
-            SetEquippedForTravel()
-            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = CFrame.new(npcData.coordinates)
-                getgenv().MissionNPCReached = true
-            end
+            -- [SỬA] dùng SafeTeleport, chỉ đặt MissionNPCReached khi teleport thành công
+            if not SafeTeleport(CFrame.new(npcData.coordinates)) then return end
+            getgenv().MissionNPCReached = true
         else
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
             local npcModel = nil
@@ -545,12 +614,9 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-            	SetEquippedForTravel()
-                hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(5, 2, 0))
-                getgenv().MissionNPCReached = true
-            end
+            -- [SỬA] dùng SafeTeleport, chỉ đặt MissionNPCReached khi teleport thành công
+            if not SafeTeleport(CFrame.new(pivot.Position + Vector3.new(5, 2, 0))) then return end
+            getgenv().MissionNPCReached = true
         end
     end
 
@@ -639,48 +705,7 @@ AutoFarm:AddToggle({
                     bossWaitStart = nil
                 end
 
-                local function HasNearbyChestOrDrop(maxDist)
-                    local char = player.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then return false end
-
-                    local chestsFolder = workspace:FindFirstChild("Chests")
-                    if chestsFolder then
-                        for _, chest in ipairs(chestsFolder:GetChildren()) do
-                            if not chest.Name:find("Chest", 1, true) then continue end
-                            local rootPart = chest:FindFirstChild("RootPart")
-                            if not rootPart then continue end
-                            local prompt = rootPart:FindFirstChild("ChestPrompt")
-                            if not prompt then
-                                local anchor = rootPart:FindFirstChild("ChestPromptAnchor")
-                                if anchor then prompt = anchor:FindFirstChild("ChestPrompt") end
-                            end
-                            if not prompt then
-                                prompt = chest:FindFirstChild("ChestPrompt", true)
-                            end
-                            if prompt then
-                                local dist = (hrp.Position - rootPart.Position).Magnitude
-                                if dist <= maxDist then return true end
-                            end
-                        end
-                    end
-
-                    local lootFolder = workspace:FindFirstChild("LootDrops")
-                    if lootFolder then
-                        for _, drop in ipairs(lootFolder:GetChildren()) do
-                            local prompt = drop:FindFirstChild("LootDropPrompt", true)
-                            if not prompt then continue end
-                            local dropPart = drop:IsA("BasePart") and drop
-                                or drop:FindFirstChildWhichIsA("BasePart", true)
-                            if dropPart then
-                                local dist = (hrp.Position - dropPart.Position).Magnitude
-                                if dist <= maxDist then return true end
-                            end
-                        end
-                    end
-
-                    return false
-                end
+                -- [ĐÃ CHUYỂN] HasNearbyChestOrDrop được đưa lên đầu file để dùng chung
 
                 local function GetNearestMob()
                     local char = player.Character
@@ -794,13 +819,11 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                SetEquippedForTravel()
-                                local newHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                                if newHrp then
-                                    newHrp.CFrame = CFrame.new(center)
+                                -- [SỬA] dùng SafeTeleport, chỉ đặt cờ khi teleport thành công
+                                if SafeTeleport(CFrame.new(center)) then
+                                    bossSpawnMoved = true
+                                    bossWaitStart = tick()
                                 end
-                                bossSpawnMoved = true
-                                bossWaitStart = tick()
                                 return
                             end
                         end
@@ -867,10 +890,10 @@ AutoFarm:AddToggle({
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
-                    EquipIfMobNearby(50)
+                    
 
                     -- Ưu tiên 1: Chest
-                    if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
+                    if ChestBlocked() then
                         task.wait(0.5)
                         continue
                     end
@@ -880,6 +903,9 @@ AutoFarm:AddToggle({
                         GetAndWaitForQuest(player)
 
                         while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
+                            -- [THÊM] có rương thì thoát vòng quest, quay về kiểm tra rương ở đầu vòng chính
+                            if ChestBlocked() then break end
+
                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                             if hrp and getgenv().MissionNPCReached then
                                 local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
@@ -916,10 +942,8 @@ AutoFarm:AddToggle({
                                 end
 
                                 if npcPos then
-                                	SetEquippedForTravel()
-                                    hrp.CFrame = CFrame.new(npcPos)
-                                    hrp.Velocity = Vector3.zero
-                                    hrp.AssemblyLinearVelocity = Vector3.zero
+                                    -- [SỬA] dùng SafeTeleport (có đặt velocity = 0 như bản gốc)
+                                    SafeTeleport(CFrame.new(npcPos), true)
                                 end
                             end
                             task.wait(0.1)
@@ -934,7 +958,7 @@ AutoFarm:AddToggle({
                     -- Ưu tiên 3: Di chuyển tới mob / hover / bossInfo (chỉ khi đã có quest hoặc không bật AutoGetMission)
 
                     -- Chest check trước khi di chuyển tới mob
-                    if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
+                    if ChestBlocked() then
                         task.wait(0.5)
                         continue
                     end
@@ -969,7 +993,7 @@ AutoFarm:AddToggle({
                             end
 
                             -- Chest check khi đang hover
-                            if getgenv().AutoChest and HasNearbyChestOrDrop(500) then
+                            if ChestBlocked() then
                                 task.wait(0.5)
                                 continue
                             end
@@ -978,6 +1002,7 @@ AutoFarm:AddToggle({
                             hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                             hrp.Velocity = Vector3.zero
                             hrp.AssemblyLinearVelocity = Vector3.zero
+							EquipIfMobNearby(20)
                             continue
                         else
                             if IsAllBossMode() then
@@ -1016,17 +1041,13 @@ AutoFarm:AddToggle({
                     local distToMob = (hrp.Position - rootPart.Position).Magnitude
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
-                    if distToMob > 50 then
-                        SetEquippedForTravel()
-                        hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            hrp.CFrame = CFrame.new(targetPos, rootPart.Position)
-                        end
+                    if distToMob > 5 then
+                        -- [SỬA] dùng SafeTeleport
+                        SafeTeleport(CFrame.new(targetPos, rootPart.Position))
                         continue
                     else
-                        hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                        hrp.Velocity = Vector3.zero
-                        hrp.AssemblyLinearVelocity = Vector3.zero
+                        -- [SỬA] dùng SafeTeleport (có đặt velocity = 0 như bản gốc)
+                        SafeTeleport(CFrame.new(targetPos, lockedRoot.Position), true)
                     end
                 end
 
@@ -1097,6 +1118,11 @@ local function LockAtPosition(cframe, isAuto)
                 isLocked = false
                 isAutoLocked = false
                 break
+            end
+
+            -- [THÊM] Có rương thì tạm ngừng kéo nhân vật, nhường cho autochest
+            if getgenv().ChestPresentCached then
+                continue
             end
 
             local currentChar = player.Character
