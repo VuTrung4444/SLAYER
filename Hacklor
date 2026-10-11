@@ -896,6 +896,13 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
+                                -- [THÊM] Đã ở trong 50 đơn vị quanh BossInfo: không teleport lại, coi như đã tới
+                                if (hrp.Position - center).Magnitude <= 50 then
+                                    bossSpawnMoved = true
+                                    bossWaitStart = tick()
+                                    return
+                                end
+
                                 -- [SỬA] dùng SafeTeleport, chỉ đặt cờ khi teleport thành công
                                 if SafeTeleport(CFrame.new(center)) then
                                     bossSpawnMoved = true
