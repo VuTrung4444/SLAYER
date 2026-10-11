@@ -424,6 +424,67 @@ local function SetEquippedForTravel()
 end
 
 -- ===== [THÊM] Kiểm tra rương dùng chung + cổng teleport duy nhất =====
+-- [THÊM] Tên Chest / Soul lấy từ ReplicatedStorage.Assets
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AssetNameCache = {}
+
+local function GetAssetNames(folderName, onlyChestModels)
+    local cached = AssetNameCache[folderName]
+    if cached then return cached end
+
+    local names = {}
+    local count = 0
+    local assets = ReplicatedStorage:FindFirstChild("Assets")
+    local folder = assets and assets:FindFirstChild(folderName)
+    if folder then
+        for _, child in ipairs(folder:GetChildren()) do
+            if (not onlyChestModels) or (child:IsA("Model") and child.Name:find("Chest", 1, true)) then
+                names[child.Name] = true
+                count += 1
+            end
+        end
+    end
+    if count > 0 then AssetNameCache[folderName] = names end
+    return names
+end
+
+-- Tên chứa "Chest" (như cũ) HOẶC trùng tên Model có chứa "Chest" trong Assets.Chests
+local function IsChestName(name)
+    if name:find("Chest", 1, true) then return true end
+    return GetAssetNames("Chests", true)[name] == true
+end
+
+-- Soul: workspace.Debree[<tên trong Assets.Souls>].Root.SoulPrompt
+local function FindNearestSoul(maxDist)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local debree = workspace:FindFirstChild("Debree")
+    if not debree then return nil end
+
+    local soulNames = GetAssetNames("Souls", false)
+    local nearest, nearestPrompt, nearestRoot = nil, nil, nil
+    local nearestDist = math.huge
+
+    for _, obj in ipairs(debree:GetChildren()) do
+        if not soulNames[obj.Name] then continue end
+        local root = obj:FindFirstChild("Root")
+        local prompt = root and root:FindFirstChild("SoulPrompt")
+        if prompt then
+            local dist = (hrp.Position - root.Position).Magnitude
+            if dist <= maxDist and dist < nearestDist then
+                nearestDist = dist
+                nearest = obj
+                nearestPrompt = prompt
+                nearestRoot = root
+            end
+        end
+    end
+
+    return nearest, nearestPrompt, nearestRoot
+end
+
 -- [THÊM] Rương đã fireproximity và đã có loot rơi ra => coi là đã mở, bỏ qua ở cả farm lẫn autochest
 getgenv().OpenedChests = setmetatable({}, {__mode = "k"})
 
@@ -436,7 +497,7 @@ local function HasNearbyChestOrDrop(maxDist)
     if chestsFolder then
         for _, chest in ipairs(chestsFolder:GetChildren()) do
             if getgenv().OpenedChests[chest] then continue end
-            if not chest.Name:find("Chest", 1, true) then continue end
+            if not IsChestName(chest.Name) then continue end
             local rootPart = chest:FindFirstChild("RootPart")
             if not rootPart then continue end
             local prompt = rootPart:FindFirstChild("ChestPrompt")
@@ -468,6 +529,9 @@ local function HasNearbyChestOrDrop(maxDist)
         end
     end
 
+    -- [THÊM] Soul
+    if FindNearestSoul(maxDist) then return true end
+
     return false
 end
 
@@ -491,7 +555,8 @@ local function IsTravelEquipped()
     return ok and equipped ~= nil and equipped.Value == 4
 end
 
-
+-- Cổng teleport duy nhất của farm/quest: kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s),
+-- và chỉ teleport khi Equipped thực sự bằng 4 tại thời điểm teleport
 local function SafeTeleport(cf, zeroVelocity)
     if ChestBlocked() then return false end
     SetEquippedForTravel()
@@ -831,6 +896,7 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
+                                -- [SỬA] dùng SafeTeleport, chỉ đặt cờ khi teleport thành công
                                 if SafeTeleport(CFrame.new(center)) then
                                     bossSpawnMoved = true
                                     bossWaitStart = tick()
@@ -1052,7 +1118,7 @@ AutoFarm:AddToggle({
                     local distToMob = (hrp.Position - rootPart.Position).Magnitude
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
-                    if distToMob > 20 then
+                    if distToMob > 5 then
                         -- [SỬA] dùng SafeTeleport
                         if not SafeTeleport(CFrame.new(targetPos, rootPart.Position)) then
                             lockedTarget = nil
@@ -1287,7 +1353,7 @@ Ect:AddToggle({
 
                     for _, chest in ipairs(chestsFolder:GetChildren()) do
                         if getgenv().OpenedChests[chest] then continue end
-                        if not chest.Name:find("Chest", 1, true) then continue end
+                        if not IsChestName(chest.Name) then continue end
 
                         local prompt, rootPart = GetChestPrompt(chest)
                         if not prompt or not rootPart then continue end
@@ -1394,6 +1460,24 @@ Ect:AddToggle({
                             getgenv().ChestReached = false
                         end
                         CollectAllDrops()
+                        continue
+                    end
+
+                    -- [THÊM] Soul: di chuyển tới nếu > 5 đơn vị rồi fireproximity
+                    local soul, soulPrompt, soulRoot = FindNearestSoul(500)
+                    if soul then
+                        if (hrp.Position - soulRoot.Position).Magnitude > 5 then
+                            getgenv().ChestReached = false
+                            SetEquippedForTravel()
+                            hrp = GetHRP()
+                            if not hrp then continue end
+                            hrp.CFrame = CFrame.new(soulRoot.Position + Vector3.new(3, 0, 0))
+                            task.wait(0.3)
+                        end
+                        if soul.Parent then
+                            fireproximityprompt(soulPrompt)
+                        end
+                        task.wait(0.5)
                         continue
                     end
 
