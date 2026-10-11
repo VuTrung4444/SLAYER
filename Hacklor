@@ -1125,15 +1125,13 @@ AutoFarm:AddToggle({
                     local distToMob = (hrp.Position - rootPart.Position).Magnitude
                     local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
 
-                    if distToMob > 20 then
-                        -- [SỬA] Mob ngoài 20 đơn vị: di chuyển qua SafeTeleport (bắt buộc equipped = 4)
+                    if distToMob > 50 then
                         if not SafeTeleport(CFrame.new(targetPos, rootPart.Position)) then
                             lockedTarget = nil
                             lockedRoot = nil
                         end
                         continue
                     else
-                        -- [SỬA] Mob trong 20 đơn vị: hover ngay, không cần equipped = 4
                         hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
                         hrp.Velocity = Vector3.zero
                         hrp.AssemblyLinearVelocity = Vector3.zero
