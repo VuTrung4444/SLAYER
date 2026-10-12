@@ -314,6 +314,42 @@ player.CharacterAdded:Connect(function(char)
     end)
 end)
 
+
+local Noclip = nil
+local Clip = nil
+
+function noclip()
+    Clip = false
+    local function Nocl()
+        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
+            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
+                    v.CanCollide = false
+                end
+            end
+        end
+        wait(0.21) 
+    end
+    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
+end
+
+function clip()
+    if Noclip then Noclip:Disconnect() end
+    Clip = true
+end
+
+Ect:AddToggle({
+    Name = "Toggle Noclip",
+    Default = false,
+    Callback = function(value)
+        if value then
+            noclip()
+        else
+            clip()
+        end
+    end
+})
+
 AutoFarm:AddToggle({
     Name = "Auto M1",
     Default = false,
@@ -423,8 +459,8 @@ local function SetEquippedForTravel()
     end
 end
 
--- ===== [THÊM] Kiểm tra rương dùng chung + cổng teleport duy nhất =====
--- [THÊM] Tên Chest / Soul lấy từ ReplicatedStorage.Assets
+-- ===== Kiểm tra rương dùng chung =====
+-- Tên Chest / Soul lấy từ ReplicatedStorage.Assets
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AssetNameCache = {}
 
@@ -485,7 +521,7 @@ local function FindNearestSoul(maxDist)
     return nearest, nearestPrompt, nearestRoot
 end
 
--- [THÊM] Rương đã fireproximity và đã có loot rơi ra => coi là đã mở, bỏ qua ở cả farm lẫn autochest
+-- Rương đã fireproximity và đã có loot rơi ra => coi là đã mở, bỏ qua ở cả farm lẫn autochest
 getgenv().OpenedChests = setmetatable({}, {__mode = "k"})
 
 local function HasNearbyChestOrDrop(maxDist)
@@ -529,7 +565,7 @@ local function HasNearbyChestOrDrop(maxDist)
         end
     end
 
-    -- [THÊM] Soul
+    -- Soul
     if FindNearestSoul(maxDist) then return true end
 
     return false
@@ -539,7 +575,7 @@ local function ChestBlocked()
     return getgenv().AutoChest and HasNearbyChestOrDrop(500)
 end
 
--- Cờ cache cho vòng lặp khoá vị trí (chạy 0.01s nên không quét workspace trực tiếp)
+-- Cờ cache (quét workspace mỗi 0.1s, vòng tween đọc cờ này thay vì quét trực tiếp)
 getgenv().ChestPresentCached = false
 task.spawn(function()
     while true do
@@ -555,28 +591,237 @@ local function IsTravelEquipped()
     return ok and equipped ~= nil and equipped.Value == 4
 end
 
--- Cổng teleport duy nhất của farm/quest: kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s),
--- và chỉ teleport khi Equipped thực sự bằng 4 tại thời điểm teleport
-local function SafeTeleport(cf, zeroVelocity)
-    if ChestBlocked() then return false end
+-- ===== [MỚI] BỘ DI CHUYỂN TWEEN (thay SafeTeleport + CFrame hover) =====
+local TweenService = game:GetService("TweenService")
+local RunService   = game:GetService("RunService")
+
+local function cfgDefault(k, v)
+    if getgenv()[k] == nil then getgenv()[k] = v end
+end
+cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
+cfgDefault("FollowTweenTime", 0.15)   -- thời gian tween mỗi lần cập nhật khi bám mob
+cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
+cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
+cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
+cfgDefault("TravelSpeed", 200)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+
+local Mover = {
+    value = nil, tween = nil, conn = nil,
+    hrp = nil, mode = nil,            -- mode: "follow" | "travel" | nil
+    mobRoot = nil,
+    recovering = false, recoverY = 0,
+    ownsNoclip = false,
+    lastFollow = 0,
+    groundT = 0, groundY = nil,
+}
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+rayParams.IgnoreWater = true
+
+-- Chỉ gọi noclip()/clip() có sẵn; không đụng vào nếu người dùng đang bật noclip bằng toggle
+local function AcquireNoclip()
+    if Mover.ownsNoclip then return end
+    if Noclip ~= nil and Clip == false then return end   -- toggle noclip của bạn đang bật
+    noclip()
+    Mover.ownsNoclip = true
+end
+
+local function ReleaseNoclip()
+    if Mover.ownsNoclip then
+        clip()
+        Mover.ownsNoclip = false
+    end
+end
+
+local function MoverStop()
+    if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
+    if Mover.conn  then Mover.conn:Disconnect(); Mover.conn = nil end
+    if Mover.value then Mover.value:Destroy(); Mover.value = nil end
+    Mover.hrp, Mover.mode, Mover.mobRoot = nil, nil, nil
+    Mover.recovering = false
+    Mover.groundY = nil
+    ReleaseNoclip()
+end
+
+local function MoverStopIf(mode)
+    if Mover.mode == mode then MoverStop() end
+end
+
+local function GetGroundY(char, hrp, x, z, refY)
+    local now = tick()
+    if now - Mover.groundT < 0.1 then return Mover.groundY end
+    Mover.groundT = now
+
+    local ignore = { char }
+    for _, n in ipairs({ "Humanoids", "Chests", "LootDrops" }) do
+        local f = workspace:FindFirstChild(n)
+        if f then table.insert(ignore, f) end
+    end
+    rayParams.FilterDescendantsInstances = ignore
+
+    local res = workspace:Raycast(Vector3.new(x, refY + 10, z), Vector3.new(0, -300, 0), rayParams)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    Mover.groundY = res and (res.Position.Y + (hum and hum.HipHeight or 2) + hrp.Size.Y / 2) or nil
+    return Mover.groundY
+end
+
+local function OnHeartbeat()
+    local hrp = Mover.hrp
+    if not (hrp and hrp.Parent and Mover.value) then return end
+    local fv = Mover.value.Value
+
+    -- Chế độ di chuyển xa: ghi cả X/Y/Z từ tween, giữ nguyên hướng xoay
+    if Mover.mode == "travel" then
+        hrp.CFrame = CFrame.new(fv) * hrp.CFrame.Rotation
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        return
+    end
+
+    -- Chế độ bám mob: X/Z từ tween, Y theo vật lý (trừ lúc đang nâng lên)
+    if Mover.mode ~= "follow" then return end
+    local mobRoot = Mover.mobRoot
+    if not (mobRoot and mobRoot.Parent) then return end
+
+    local char   = hrp.Parent
+    local cur    = hrp.Position
+    local mobPos = mobRoot.Position
+    local x, z   = fv.X, fv.Z
+    local vy     = hrp.AssemblyLinearVelocity.Y
+
+    local groundY
+    if getgenv().FollowGroundClamp then
+        groundY = GetGroundY(char, hrp, x, z, mobPos.Y)
+    end
+
+    local tooFar   = math.abs(cur.Y - mobPos.Y) > getgenv().FollowMaxYGap
+    local underGnd = groundY and cur.Y < groundY - 1
+    if not Mover.recovering and (tooFar or underGnd) then
+        Mover.recovering = true
+    end
+
+    local y
+    if Mover.recovering then
+        Mover.recoverY = math.max(mobPos.Y + 3, groundY or -math.huge)
+        y, vy = fv.Y, 0                                        -- Y đi theo tween giống X/Z
+        if math.abs(cur.Y - Mover.recoverY) < 1.5 then         -- lên đủ gần thì trả về vật lý
+            Mover.recovering = false
+            y = cur.Y
+        end
+    else
+        y = cur.Y
+    end
+
+    local pos  = Vector3.new(x, y, z)
+    local look = Vector3.new(mobPos.X, y, mobPos.Z)
+    if (pos - look).Magnitude > 0.05 then
+        hrp.CFrame = CFrame.lookAt(pos, look)                  -- nhìn mob, không chúi/ngửa
+    else
+        hrp.CFrame = CFrame.new(pos)
+    end
+    hrp.AssemblyLinearVelocity = Vector3.new(0, vy, 0)         -- triệt vận tốc ngang, giữ Y
+end
+
+local function MoverEnsure(hrp)
+    if Mover.hrp == hrp and Mover.value and Mover.conn then return end
+    MoverStop()
+    Mover.hrp = hrp
+    Mover.value = Instance.new("Vector3Value")
+    Mover.value.Value = hrp.Position
+    Mover.conn = RunService.Heartbeat:Connect(OnHeartbeat)
+end
+
+-- Bám cạnh mob (hover): gọi liên tục trong vòng lặp farm
+local function MoverFollow(hrp, mobRoot)
+    if Mover.mode == "travel" then return end   -- luồng khác đang di chuyển xa
+    MoverEnsure(hrp)
+    Mover.mode = "follow"
+    Mover.mobRoot = mobRoot
+
+    if getgenv().FollowNoclip then AcquireNoclip() else ReleaseNoclip() end
+
+    local now = tick()
+    if Mover.tween and now - Mover.lastFollow < 0.05 then return end   -- throttle
+    Mover.lastFollow = now
+
+    local p = mobRoot.Position
+    local goalY = Mover.recovering and Mover.recoverY or hrp.Position.Y
+    local goal  = Vector3.new(p.X + getgenv().FollowSideX, goalY, p.Z)
+
+    if Mover.tween then Mover.tween:Cancel() end
+    Mover.tween = TweenService:Create(
+        Mover.value,
+        TweenInfo.new(getgenv().FollowTweenTime, Enum.EasingStyle.Linear),
+        { Value = goal }
+    )
+    Mover.tween:Play()
+end
+
+local function ShouldAbort(opts)
+    if opts.farm and not getgenv().AutoHoverMob then return true end
+    if not opts.ignoreChest and getgenv().ChestPresentCached then return true end
+    if opts.abort and opts.abort() then return true end
+    return false
+end
+
+-- Di chuyển xa tới một vị trí (thay cho root.CFrame = cf). Chặn cho tới khi tới nơi hoặc bị hủy
+local function TravelTween(hrp, dest, opts)
+    if Mover.mode == "travel" then return false end
+    MoverStop()
+    MoverEnsure(hrp)
+    Mover.mode = "travel"
+    AcquireNoclip()
+
+    Mover.value.Value = hrp.Position
+    local dist = (dest - hrp.Position).Magnitude
+    local t = math.max(dist / getgenv().TravelSpeed, 0.1)   -- tốc độ ổn định; 0.1s tối thiểu để tween không quá ngắn
+
+    local tw = TweenService:Create(Mover.value, TweenInfo.new(t, Enum.EasingStyle.Linear), { Value = dest })
+    Mover.tween = tw
+
+    local state
+    local c = tw.Completed:Connect(function(s) state = s end)
+    tw:Play()
+
+    local aborted = false
+    while state == nil do
+        if not hrp.Parent or ShouldAbort(opts) then
+            aborted = true
+            tw:Cancel()
+            break
+        end
+        RunService.Heartbeat:Wait()
+    end
+    c:Disconnect()
+
+    MoverStop()   -- trả nhân vật về vật lý bình thường, gỡ noclip do script bật
+    return (not aborted) and state == Enum.PlaybackState.Completed
+end
+
+-- Cổng di chuyển duy nhất của farm/quest/chest/loot:
+-- kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s), chỉ di chuyển khi Equipped thực sự bằng 4
+-- opts.farm        = true  -> tự hủy khi tắt Auto Farm
+-- opts.ignoreChest = true  -> dùng cho chính việc đi nhặt rương/loot (không bị ChestBlocked chặn)
+-- opts.abort       = function() return bool end  -> điều kiện hủy tùy ý
+local function SafeMove(dest, opts)
+    opts = opts or {}
+    if not opts.ignoreChest and ChestBlocked() then return false end
     SetEquippedForTravel()
     if not IsTravelEquipped() then return false end
-    if ChestBlocked() then return false end
+    if not opts.ignoreChest and ChestBlocked() then return false end
+    if opts.farm and not getgenv().AutoHoverMob then return false end
+
     local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return false end
-    root.CFrame = cf
-    if zeroVelocity then
-        root.Velocity = Vector3.zero
-        root.AssemblyLinearVelocity = Vector3.zero
-    end
-    return true
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    return TravelTween(hrp, dest, opts)
 end
--- ===== [HẾT PHẦN THÊM] =====
+getgenv().TweenTravelTo = SafeMove   -- để code AutoChest / AutoLoot gọi: TweenTravelTo(pos, {ignoreChest = true})
+-- ===== [HẾT PHẦN MỚI] =====
 
 
 local NPCData = {
-            
+
     ["tom"] = {
         coordinates = Vector3.new(506.4, 1123.89, -970.59),
         displayName = "Tom",
@@ -662,8 +907,8 @@ local function GetAndWaitForQuest(player)
         local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
 
         if npcData and npcData.coordinates then
-            -- [SỬA] dùng SafeTeleport, chỉ đặt MissionNPCReached khi teleport thành công
-            if not SafeTeleport(CFrame.new(npcData.coordinates)) then return end
+            -- [SỬA] tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
+            if not SafeMove(npcData.coordinates, { farm = true }) then return end
             getgenv().MissionNPCReached = true
         else
             local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
@@ -691,8 +936,8 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            -- [SỬA] dùng SafeTeleport, chỉ đặt MissionNPCReached khi teleport thành công
-            if not SafeTeleport(CFrame.new(pivot.Position + Vector3.new(5, 2, 0))) then return end
+            -- [SỬA] tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
+            if not SafeMove(pivot.Position + Vector3.new(5, 2, 0), { farm = true }) then return end
             getgenv().MissionNPCReached = true
         end
     end
@@ -747,16 +992,26 @@ AutoFarm:AddToggle({
     Default = false,
     Callback = function(state)
         getgenv().AutoHoverMob = state
-        getgenv().HoverMobHeight = getgenv().HoverMobHeight or -6.5
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
 
         if state then
+            -- [MỚI] chặn chạy chồng khi bật/tắt nhanh
+            getgenv().FarmRunId = (getgenv().FarmRunId or 0) + 1
+            local runId = getgenv().FarmRunId
+
             task.spawn(function()
                 local lockedTarget = nil
                 local lockedRoot = nil
                 local bossSpawnMoved = false
                 local bossWaitStart = nil
                 local BOSS_WAIT_TIME = 4
+                -- [MỚI] Thời điểm gần nhất đang bám/đánh mob. Còn trong thời gian ân hạn thì KHÔNG về BossInfo
+                local lastEngagedAt = 0
+                local function BossReturnGrace() return getgenv().BossReturnGrace or 5 end
+
+                local function Running()
+                    return getgenv().AutoHoverMob and runId == getgenv().FarmRunId
+                end
 
                 local AllBossList = {
                     "Akazo", "Douma", "Tengai", "Obari", "Yahari",
@@ -781,8 +1036,6 @@ AutoFarm:AddToggle({
                     bossSpawnMoved = false
                     bossWaitStart = nil
                 end
-
-                -- [ĐÃ CHUYỂN] HasNearbyChestOrDrop được đưa lên đầu file để dùng chung
 
                 local function GetNearestMob()
                     local char = player.Character
@@ -871,6 +1124,8 @@ AutoFarm:AddToggle({
 
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
+                    -- [MỚI] Vừa bám mob xong (mob chỉ tạm thời mất khỏi danh sách): chưa về BossInfo, chờ tìm lại mob
+                    if tick() - lastEngagedAt < BossReturnGrace() then return end
 
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -896,15 +1151,18 @@ AutoFarm:AddToggle({
 
                             local center = bossInfo:GetAttribute("Center")
                             if center and typeof(center) == "Vector3" then
-                                -- [THÊM] Đã ở trong 50 đơn vị quanh BossInfo: không teleport lại, coi như đã tới
+                                -- Đã ở trong 50 đơn vị quanh BossInfo: không di chuyển lại, coi như đã tới
                                 if (hrp.Position - center).Magnitude <= 50 then
                                     bossSpawnMoved = true
                                     bossWaitStart = tick()
                                     return
                                 end
 
-                                -- [SỬA] dùng SafeTeleport, chỉ đặt cờ khi teleport thành công
-                                if SafeTeleport(CFrame.new(center)) then
+                                -- [SỬA] tween tới điểm boss, chỉ đặt cờ khi tới nơi thành công
+                                if getgenv().FarmDebug then
+                                    warn("[AutoFarm] Không thấy mob '" .. filter .. "', về BossInfo")
+                                end
+                                if SafeMove(center, { farm = true }) then
                                     bossSpawnMoved = true
                                     bossWaitStart = tick()
                                 end
@@ -919,115 +1177,110 @@ AutoFarm:AddToggle({
                 end
 
                 local function GetNearestMobInRange(range)
-                local char = player.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return nil end
-            
-                local ok, regions = pcall(function()
-                    return workspace.Humanoids.Regions:GetChildren()
-                end)
-                if not ok or not regions then return nil end
-            
-                local nearest = nil
-                local nearestDist = math.huge
-            
-                for _, region in ipairs(regions) do
-                    local activeNpcs = region:FindFirstChild("ActiveNpcs")
-                    if not activeNpcs then continue end
-            
-                    for _, folder in ipairs(activeNpcs:GetChildren()) do
-                        for _, npcModel in ipairs(folder:GetChildren()) do
-                            if not npcModel:IsA("Model") then continue end
-            
-                            local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
-                            local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
-            
-                            if h and h.Health > 0 and rootPart then
-                                local dist = (hrp.Position - rootPart.Position).Magnitude
-                                if dist <= range and dist < nearestDist then
-                                    nearestDist = dist
-                                    nearest = npcModel
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return nil end
+
+                    local ok, regions = pcall(function()
+                        return workspace.Humanoids.Regions:GetChildren()
+                    end)
+                    if not ok or not regions then return nil end
+
+                    local nearest = nil
+                    local nearestDist = math.huge
+
+                    for _, region in ipairs(regions) do
+                        local activeNpcs = region:FindFirstChild("ActiveNpcs")
+                        if not activeNpcs then continue end
+
+                        for _, folder in ipairs(activeNpcs:GetChildren()) do
+                            for _, npcModel in ipairs(folder:GetChildren()) do
+                                if not npcModel:IsA("Model") then continue end
+
+                                local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
+                                local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+
+                                if h and h.Health > 0 and rootPart then
+                                    local dist = (hrp.Position - rootPart.Position).Magnitude
+                                    if dist <= range and dist < nearestDist then
+                                        nearestDist = dist
+                                        nearest = npcModel
+                                    end
                                 end
                             end
                         end
                     end
-                end
-            
-                return nearest
-            end
-            
-            local function EquipIfMobNearby(range)
-                local ok, equipped = pcall(function()
-                    return player.Items_Config.Equipped
-                end)
-                if not ok or not equipped then return end
-                if equipped.Value == 1 or equipped.Value == 2 then return end
-            
-                if GetNearestMobInRange(range) then
-                    equipped.Value = 1
-                end
-            end
 
-                while getgenv().AutoHoverMob do
+                    return nearest
+                end
+
+                local function EquipIfMobNearby(range)
+                    local ok, equipped = pcall(function()
+                        return player.Items_Config.Equipped
+                    end)
+                    if not ok or not equipped then return end
+                    if equipped.Value == 1 or equipped.Value == 2 then return end
+
+                    if GetNearestMobInRange(range) then
+                        equipped.Value = 1
+                    end
+                end
+
+                -- [MỚI] Vị trí đứng cạnh mob: lệch trục X, Y = Y của mob + 3 (rồi rơi xuống đất bằng vật lý)
+                local function MobStandPos(mobRoot)
+                    local p = mobRoot.Position
+                    return Vector3.new(p.X + getgenv().FollowSideX, p.Y + 3, p.Z)
+                end
+
+                -- [MỚI] Tiếp cận mob: xa (>50) thì SetEquippedForTravel + tween xa, gần thì bám bằng tween X/Z
+                local function ApproachMob(hrp, mobRoot)
+                    local d = (hrp.Position - mobRoot.Position).Magnitude
+                    if d > 50 then
+                        MoverStopIf("follow")
+                        return SafeMove(MobStandPos(mobRoot), { farm = true })
+                    end
+                    MoverFollow(hrp, mobRoot)
+                    return true
+                end
+
+                while Running() do
                     task.wait(0.01)
 
                     local char = player.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if not hrp then task.wait(0.5) continue end
-                    
 
                     -- Ưu tiên 1: Chest
                     if ChestBlocked() then
+                        MoverStopIf("follow")
                         task.wait(0.5)
                         continue
                     end
 
                     -- Ưu tiên 2: Nhận quest nếu chưa có
-                        if getgenv().AutoGetMission and not HasQuest() then
+                    if getgenv().AutoGetMission and not HasQuest() then
+                        MoverStopIf("follow")
                         GetAndWaitForQuest(player)
 
-                        while getgenv().AutoGetMission and not HasQuest() and getgenv().AutoHoverMob do
-                            -- [THÊM] có rương thì thoát vòng quest, quay về kiểm tra rương ở đầu vòng chính
+                        while getgenv().AutoGetMission and not HasQuest() and Running() do
+                            -- có rương thì thoát vòng quest, quay về kiểm tra rương ở đầu vòng chính
                             if ChestBlocked() then break end
+
+                            -- [MỚI] chưa tới được NPC (tween bị hủy / chưa equip kịp) thì thử lại
+                            if not getgenv().MissionNPCReached then
+                                GetAndWaitForQuest(player)
+                            end
 
                             hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                             if hrp and getgenv().MissionNPCReached then
-                                local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
-                                local npcPos = nil
-
-                                if npcData and npcData.coordinates then
-                                    npcPos = npcData.coordinates
-                                else
-                                    local npcModel = nil
-                                    local ok2, regions2 = pcall(function()
-                                        return workspace.Debree.Regions:GetChildren()
-                                    end)
-                                    if ok2 and regions2 then
-                                        for _, region in ipairs(regions2) do
-                                            local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
-                                            if stationaryNpcs then
-                                                local npcName = npcData and npcData.displayName or getgenv().AutoMissionName
-                                                for _, npc in ipairs(stationaryNpcs:GetChildren()) do
-                                                    if npc.Name:lower() == npcName:lower() then
-                                                        npcModel = npc
-                                                        break
-                                                    end
-                                                end
-                                            end
-                                            if npcModel then break end
-                                        end
-                                    end
-                                    if npcModel then
-                                        local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
-                                        if okPivot and pivot then
-                                            npcPos = pivot.Position + Vector3.new(5, 2, 0)
-                                        end
-                                    end
-                                end
+                                local _, _, npcPos = GetNPCPos()
 
                                 if npcPos then
-                                    -- [SỬA] dùng SafeTeleport (có đặt velocity = 0 như bản gốc)
-                                    SafeTeleport(CFrame.new(npcPos), true)
+                                    -- [SỬA] chỉ tween lại khi bị đẩy lệch khỏi NPC (thay cho teleport mỗi 0.1s)
+                                    local d = hrp.Position - npcPos
+                                    if Vector3.new(d.X, 0, d.Z).Magnitude > 6 or math.abs(d.Y) > 10 then
+                                        SafeMove(npcPos, { farm = true })
+                                    end
                                 end
                             end
                             task.wait(0.1)
@@ -1039,16 +1292,18 @@ AutoFarm:AddToggle({
                         getgenv().MissionNPCReached = false
                     end
 
-                    -- Ưu tiên 3: Di chuyển tới mob / hover / bossInfo (chỉ khi đã có quest hoặc không bật AutoGetMission)
+                    -- Ưu tiên 3: Di chuyển tới mob / hover / bossInfo
 
                     -- Chest check trước khi di chuyển tới mob
                     if ChestBlocked() then
+                        MoverStopIf("follow")
                         task.wait(0.5)
                         continue
                     end
 
                     -- Chờ boss spawn
                     if bossSpawnMoved and bossWaitStart then
+                        MoverStopIf("follow")
                         if tick() - bossWaitStart >= BOSS_WAIT_TIME then
                             local target, _ = GetNearestMob()
                             if not target then
@@ -1070,6 +1325,7 @@ AutoFarm:AddToggle({
                         if h and h.Health > 0 and lockedTarget.Parent then
                             local filter = GetCurrentBossFilter()
                             if filter ~= "" and lockedTarget.Name:lower() ~= filter then
+                                MoverStopIf("follow")
                                 lockedTarget = nil
                                 lockedRoot = nil
                                 bossSpawnMoved = false
@@ -1078,17 +1334,20 @@ AutoFarm:AddToggle({
 
                             -- Chest check khi đang hover
                             if ChestBlocked() then
+                                MoverStopIf("follow")
                                 task.wait(0.5)
                                 continue
                             end
 
-                            local targetPos = lockedRoot.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-                            hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                            hrp.Velocity = Vector3.zero
-                            hrp.AssemblyLinearVelocity = Vector3.zero
-							EquipIfMobNearby(20)
+                            -- [SỬA] thay 4 dòng CFrame/Velocity cũ bằng bám tween
+                            lastEngagedAt = tick()   -- [MỚI] đang bám mob: BossInfo không còn liên quan
+                            ApproachMob(hrp, lockedRoot)
+                            EquipIfMobNearby(20)
                             continue
                         else
+                            MoverStopIf("follow")
+                            -- [MỚI] Mob chết hẳn thì được về BossInfo ngay; chỉ biến mất/đổi model thì chờ trong thời gian ân hạn
+                            if h and h.Health <= 0 then lastEngagedAt = 0 end
                             if IsAllBossMode() then
                                 AdvanceAllBoss()
                             end
@@ -1101,6 +1360,7 @@ AutoFarm:AddToggle({
                     local target, rootPart = GetNearestMob()
 
                     if not target or not rootPart then
+                        MoverStopIf("follow")
                         local filter = getgenv().MobNameFilter:lower():match("^%s*(.-)%s*$")
                         if filter ~= "" then
                             TryMoveToBossSpawn()
@@ -1113,6 +1373,7 @@ AutoFarm:AddToggle({
                     lockedRoot = rootPart
                     bossSpawnMoved = false
                     bossWaitStart = nil
+                    lastEngagedAt = tick()
 
                     local humanoid = target:FindFirstChildWhichIsA("Humanoid", true)
                     if not humanoid or humanoid.Health <= 0 then
@@ -1122,22 +1383,14 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    local distToMob = (hrp.Position - rootPart.Position).Magnitude
-                    local targetPos = rootPart.Position + Vector3.new(0, getgenv().HoverMobHeight, 0)
-
-                    if distToMob > 50 then
-                        if not SafeTeleport(CFrame.new(targetPos, rootPart.Position)) then
-                            lockedTarget = nil
-                            lockedRoot = nil
-                        end
-                        continue
-                    else
-                        hrp.CFrame = CFrame.new(targetPos, lockedRoot.Position)
-                        hrp.Velocity = Vector3.zero
-                        hrp.AssemblyLinearVelocity = Vector3.zero
+                    -- [SỬA] xa thì tween xa (có SetEquippedForTravel), gần thì bám X/Z
+                    if not ApproachMob(hrp, rootPart) then
+                        lockedTarget = nil
+                        lockedRoot = nil
                     end
                 end
 
+                MoverStopIf("follow")
                 lockedTarget = nil
                 lockedRoot = nil
                 bossSpawnMoved = false
@@ -1161,13 +1414,14 @@ AutoFarm:AddTextbox({
     end
 })
 
+-- [SỬA] Thay textbox "Hover Height" (trục Y) bằng khoảng cách trục X
 AutoFarm:AddTextbox({
-    Name = "Hover Height",
-    Default = "-6.5",
-    Placeholder = "Nhập độ cao (mặc định: -6.5)",
+    Name = "Khoảng cách X",
+    Default = tostring(getgenv().FollowSideX),
+    Placeholder = "Lệch trục X so với mob (mặc định: 5, âm = phía bên kia)",
     Callback = function(value)
         local num = tonumber(value)
-        if num then getgenv().HoverMobHeight = num end
+        if num then getgenv().FollowSideX = num end
     end
 })
 
@@ -1180,136 +1434,7 @@ AutoFarm:AddTextbox({
     end
 })
 
-
-
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-
-
-local isLocked = false
-local isAutoLocked = false
-
-local function LockAtPosition(cframe, isAuto)
-    isLocked = true
-    isAutoLocked = isAuto or false
-    local lockedCFrame = cframe
-
-    task.spawn(function()
-        while isLocked do
-            task.wait(0.01)
-
-
-            if isAutoLocked and getgenv().AutoGetMission and HasQuest() then
-                isLocked = false
-                isAutoLocked = false
-                break
-            end
-
-            -- [THÊM] Có rương thì tạm ngừng kéo nhân vật, nhường cho autochest
-            if getgenv().ChestPresentCached then
-                continue
-            end
-
-            local currentChar = player.Character
-            local currentHRP = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-            if not currentHRP then break end
-
-            currentHRP.Velocity = Vector3.zero
-            currentHRP.AssemblyLinearVelocity = Vector3.zero
-
-            local tween = TweenService:Create(currentHRP, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
-                CFrame = lockedCFrame
-            })
-            tween:Play()
-        end
-    end)
-end
-
-local function UnlockPosition()
-    isLocked = false
-end
-
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode ~= Enum.KeyCode.E then return end
-
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if isLocked then
-        UnlockPosition()
-        return
-    end
-
-    LockAtPosition(hrp.CFrame)
-end)
-
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-
-        if not getgenv().AutoGetMission then continue end
-        if not getgenv().MissionNPCReached then continue end
-
-        if HasQuest() then
-            if isLocked then
-                UnlockPosition()
-            end
-            continue
-        end
-
-
-        local char = player.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-
-        local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName or "")
-        local npcPos = nil
-
-        if npcData and npcData.coordinates then
-            npcPos = npcData.coordinates
-        else
-            local npcModel = nil
-            local ok, regions = pcall(function()
-                return workspace.Debree.Regions:GetChildren()
-            end)
-            if ok and regions then
-                for _, region in ipairs(regions) do
-                    local stationaryNpcs = region:FindFirstChild("StationaryNpcs")
-                    if stationaryNpcs then
-                        local npcName = npcData and npcData.displayName or (getgenv().AutoMissionName or "")
-                        for _, npc in ipairs(stationaryNpcs:GetChildren()) do
-                            if npc.Name:lower() == npcName:lower() then
-                                npcModel = npc
-                                break
-                            end
-                        end
-                    end
-                    if npcModel then break end
-                end
-            end
-            if npcModel then
-                local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
-                if okPivot and pivot then
-                    npcPos = pivot.Position + Vector3.new(5, 2, 0)
-                end
-            end
-        end
-
-        if npcPos then
-            if not isLocked then
-                LockAtPosition(CFrame.new(npcPos))
-            end
-        end
-    end
-end)
-
-
+-- ===== AUTO CHEST / LOOT / SOUL (đã chuyển sang tween) =====
 getgenv().AutoChest = false
 Ect:AddToggle({
     Name = "Auto Chest",
@@ -1319,8 +1444,22 @@ Ect:AddToggle({
         getgenv().ChestReached = false
 
         if state then
+            -- [MỚI] chặn chạy chồng khi bật/tắt nhanh
+            getgenv().ChestRunId = (getgenv().ChestRunId or 0) + 1
+            local runId = getgenv().ChestRunId
+
             task.spawn(function()
                 local player = game:GetService("Players").LocalPlayer
+
+                local function Running()
+                    return getgenv().AutoChest and runId == getgenv().ChestRunId
+                end
+
+                -- [MỚI] ignoreChest: đi nhặt rương thì không bị ChestBlocked tự chặn; tắt toggle thì hủy tween
+                local moveOpts = {
+                    ignoreChest = true,
+                    abort = function() return not Running() end,
+                }
 
                 local function GetHRP()
                     local char = player.Character
@@ -1376,7 +1515,7 @@ Ect:AddToggle({
                     local lootFolder = workspace:FindFirstChild("LootDrops")
                     if not lootFolder then return end
 
-                    while getgenv().AutoChest do
+                    while Running() do
                         local hrp = GetHRP()
                         if not hrp then break end
 
@@ -1403,12 +1542,20 @@ Ect:AddToggle({
 
                         local anyRemaining = false
                         for _, data in ipairs(validDrops) do
-                            if not getgenv().AutoChest then break end
+                            if not Running() then break end
                             if not data.drop.Parent then continue end
 
                             hrp = GetHRP()
                             if not hrp then break end
-                            hrp.CFrame = CFrame.new(data.part.Position + Vector3.new(3, 3, 0))
+
+                            -- [SỬA] tween tới loot (có SetEquippedForTravel trong SafeMove); loot ở gần thì khỏi di chuyển
+                            if (hrp.Position - data.part.Position).Magnitude > 6 then
+                                if not SafeMove(data.part.Position + Vector3.new(3, 3, 0), moveOpts) then
+                                    anyRemaining = true
+                                    task.wait(0.3)
+                                    continue
+                                end
+                            end
                             task.wait(0.2)
 
                             if data.drop.Parent then
@@ -1427,7 +1574,7 @@ Ect:AddToggle({
 
                 local lastFiredChest = nil
 
-                while getgenv().AutoChest do
+                while Running() do
                     task.wait(0.5)
 
                     local hrp = GetHRP()
@@ -1457,7 +1604,7 @@ Ect:AddToggle({
                     end
 
                     if hasDrops then
-                        -- [THÊM] Có loot rơi ra sau khi fire rương => rương vừa fire đã mở, không quay lại nữa
+                        -- Có loot rơi ra sau khi fire rương => rương vừa fire đã mở, không quay lại nữa
                         if lastFiredChest then
                             getgenv().OpenedChests[lastFiredChest] = true
                             lastFiredChest = nil
@@ -1467,15 +1614,15 @@ Ect:AddToggle({
                         continue
                     end
 
-                    -- [THÊM] Soul: di chuyển tới nếu > 5 đơn vị rồi fireproximity
+                    -- Soul: di chuyển tới nếu > 5 đơn vị rồi fireproximity
                     local soul, soulPrompt, soulRoot = FindNearestSoul(500)
                     if soul then
                         if (hrp.Position - soulRoot.Position).Magnitude > 5 then
                             getgenv().ChestReached = false
-                            SetEquippedForTravel()
-                            hrp = GetHRP()
-                            if not hrp then continue end
-                            hrp.CFrame = CFrame.new(soulRoot.Position + Vector3.new(3, 0, 0))
+                            -- [SỬA] SafeMove đã gồm SetEquippedForTravel; thất bại thì thử lại ở vòng sau
+                            if not SafeMove(soulRoot.Position + Vector3.new(3, 0, 0), moveOpts) then
+                                continue
+                            end
                             task.wait(0.3)
                         end
                         if soul.Parent then
@@ -1495,10 +1642,15 @@ Ect:AddToggle({
                     local prompt, rootPart = GetChestPrompt(chest)
                     if not prompt or not rootPart then continue end
 
-                    if not getgenv().ChestReached then
-                    	SetEquippedForTravel()
-                        hrp.CFrame = CFrame.new(rootPart.Position + Vector3.new(3, 0, 0))
+                    -- [SỬA] tween tới rương; nếu bị đẩy lệch xa hơn 12 studs thì tween lại dù đã "Reached"
+                    local distToChest = (hrp.Position - rootPart.Position).Magnitude
+                    if not getgenv().ChestReached or distToChest > 12 then
+                        if not SafeMove(rootPart.Position + Vector3.new(3, 0, 0), moveOpts) then
+                            getgenv().ChestReached = false
+                            continue
+                        end
                         task.wait(0.3)
+                        if not chest.Parent then continue end
                     end
 
                     fireproximityprompt(prompt)
@@ -1980,40 +2132,6 @@ Ect:AddToggle({
 })]]
 
 
-local Noclip = nil
-local Clip = nil
-
-function noclip()
-    Clip = false
-    local function Nocl()
-        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
-            for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-                if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
-                    v.CanCollide = false
-                end
-            end
-        end
-        wait(0.21) 
-    end
-    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
-end
-
-function clip()
-    if Noclip then Noclip:Disconnect() end
-    Clip = true
-end
-
-Ect:AddToggle({
-    Name = "Toggle Noclip",
-    Default = false,
-    Callback = function(value)
-        if value then
-            noclip()
-        else
-            clip()
-        end
-    end
-})
 
 Ect:AddButton({
 		Name = "Reset",
@@ -2510,7 +2628,7 @@ local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
 local WalkSpeed = 150
-local JumpPower = 70
+local JumpPower = 200
 local isEnabled = false
 
 local BurstOnTime = 0.5
