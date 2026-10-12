@@ -445,7 +445,6 @@ AutoFarm:AddToggle({
         end)
     end
 })
-
 local player = game:GetService("Players").LocalPlayer
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
@@ -598,14 +597,15 @@ local RunService   = game:GetService("RunService")
 local function cfgDefault(k, v)
     if getgenv()[k] == nil then getgenv()[k] = v end
 end
-cfgDefault("FollowSideX", 6)          -- khoảng cách trục X so với mob (âm = phía bên kia)
-cfgDefault("FollowSpeed", 50)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
-cfgDefault("FollowCatchupDelay", 0.5) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
-cfgDefault("FollowCatchupDist", 8)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
+cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
+cfgDefault("FollowSpeed", 100)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
+cfgDefault("FollowCatchupDelay", 0.7) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
+cfgDefault("FollowCatchupDist", 10)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
-cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("TravelSpeed", 200)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
 
 -- Chu kỳ cập nhật tween khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
 local FOLLOW_INTERVAL = 0.05
@@ -615,6 +615,7 @@ local Mover = {
     hrp = nil, mode = nil,            -- mode: "follow" | "travel" | nil
     mobRoot = nil,
     recovering = false, recoverY = 0,
+    mobLastPos = nil, mobLastT = 0, mobSpeed = 0,   -- đo tốc độ mob để phát hiện bị văng
     contacted = false, farSince = nil,   -- contacted: đã từng bám sát mob này; farSince: lúc bắt đầu bị văng xa
     ownsNoclip = false,
     lastFollow = 0,
@@ -648,6 +649,7 @@ local function MoverStop()
     Mover.recovering = false
     Mover.groundY = nil
     Mover.contacted, Mover.farSince = false, nil
+    Mover.mobLastPos, Mover.mobSpeed = nil, 0
     ReleaseNoclip()
 end
 
@@ -743,7 +745,10 @@ local function MoverFollow(hrp, mobRoot)
     if Mover.mode == "travel" then return end   -- luồng khác đang di chuyển xa
     MoverEnsure(hrp)
     Mover.mode = "follow"
-    if Mover.mobRoot ~= mobRoot then Mover.contacted, Mover.farSince = false, nil end  -- mob mới: tiếp cận bình thường, không delay
+    if Mover.mobRoot ~= mobRoot then
+        Mover.contacted, Mover.farSince = false, nil
+        Mover.mobLastPos, Mover.mobSpeed = nil, 0
+    end  -- mob mới: tiếp cận bình thường, không delay
     Mover.mobRoot = mobRoot
 
     if getgenv().FollowNoclip then AcquireNoclip() else ReleaseNoclip() end
@@ -759,14 +764,31 @@ local function MoverFollow(hrp, mobRoot)
     -- [MỚI] Mob bị văng xa: đứng yên FollowCatchupDelay giây rồi mới đuổi theo.
     -- Chỉ áp dụng khi đã từng bám sát mob này (contacted) và không đang nâng Y; tiếp cận mob mới thì không delay
     local gapXZ = Vector3.new(goal.X - hrp.Position.X, 0, goal.Z - hrp.Position.Z).Magnitude
-    if gapXZ <= getgenv().FollowCatchupDist then
+
+    -- [MỚI] Đo tốc độ mob (XZ) giữa hai lần lấy mẫu cách nhau >= FOLLOW_INTERVAL.
+    -- Mob bay nhanh hơn FollowKnockSpeed = bị văng: delay ngay, không đợi khoảng cách vượt FollowCatchupDist
+    if not Mover.mobLastPos then
+        Mover.mobLastPos, Mover.mobLastT = p, now
+    elseif now - Mover.mobLastT >= FOLLOW_INTERVAL then
+        local d = p - Mover.mobLastPos
+        Mover.mobSpeed = Vector3.new(d.X, 0, d.Z).Magnitude / (now - Mover.mobLastT)
+        Mover.mobLastPos, Mover.mobLastT = p, now
+    end
+    local knocked = Mover.mobSpeed > getgenv().FollowKnockSpeed
+    local far     = gapXZ > getgenv().FollowCatchupDist
+
+    if not far and not knocked then
         Mover.contacted = true
         Mover.farSince = nil
     elseif Mover.contacted and not Mover.recovering then
         if not Mover.farSince then
             Mover.farSince = now
             if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
-            Mover.value.Value = hrp.Position            -- ghim tại chỗ, không tween về phía mob
+            Mover.value.Value = hrp.Position            -- ghim tại chỗ ngay lập tức, không tween về phía mob
+            if getgenv().FarmDebug then
+                warn(string.format("[Follow] mob bị văng: gap=%.1f, mobSpeed=%.1f -> chờ %.1fs",
+                    gapXZ, Mover.mobSpeed, getgenv().FollowCatchupDelay))
+            end
         end
         if now - Mover.farSince < getgenv().FollowCatchupDelay then return end
     end
