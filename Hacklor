@@ -446,8 +446,6 @@ AutoFarm:AddToggle({
     end
 })
 
-
-
 local player = game:GetService("Players").LocalPlayer
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
@@ -609,6 +607,7 @@ cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
 cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("FollowRange", 250)        -- [MỚI] mob trong phạm vi này: di chuyển bằng FollowSpeed; ngoài phạm vi: TravelSpeed
 
 -- Chu kỳ cập nhật tween khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
 local FOLLOW_INTERVAL = 0.05
@@ -1311,10 +1310,11 @@ AutoFarm:AddToggle({
                     return Vector3.new(p.X + getgenv().FollowSideX, p.Y + 3, p.Z)
                 end
 
-                -- [MỚI] Tiếp cận mob: xa (>50) thì SetEquippedForTravel + tween xa, gần thì bám bằng tween X/Z
+                -- [SỬA] Tiếp cận mob: ngoài FollowRange (250) thì SetEquippedForTravel + tween xa (TravelSpeed);
+                -- trong FollowRange thì bám bằng tween X/Z (FollowSpeed), gồm cả logic mob bị văng (delay + chuỗi phím W/Q)
                 local function ApproachMob(hrp, mobRoot)
                     local d = (hrp.Position - mobRoot.Position).Magnitude
-                    if d > 50 then
+                    if d > getgenv().FollowRange then
                         MoverStopIf("follow")
                         return SafeMove(MobStandPos(mobRoot), { farm = true })
                     end
@@ -1746,6 +1746,7 @@ Ect:AddToggle({
         end
     end
 })
+
 
 
 AutoSkill:AddToggle({
