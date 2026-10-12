@@ -598,14 +598,14 @@ local function cfgDefault(k, v)
     if getgenv()[k] == nil then getgenv()[k] = v end
 end
 cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
-cfgDefault("FollowSpeed", 100)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
-cfgDefault("FollowCatchupDelay", 0.7) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowSpeed", 40)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
+cfgDefault("FollowCatchupDelay", 1) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
 cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
-cfgDefault("FollowCatchupDist", 10)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
+cfgDefault("FollowCatchupDist", 7)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
-cfgDefault("TravelSpeed", 200)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
 
 -- Chu kỳ cập nhật tween khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
 local FOLLOW_INTERVAL = 0.05
@@ -2680,8 +2680,8 @@ local WalkSpeed = 150
 local JumpPower = 200
 local isEnabled = false
 
-local BurstOnTime = 0.5
-local BurstOffTime = 0.8
+local BurstOnTime = 1
+local BurstOffTime = 0.5
 
 local walkSpeedConnection
 local jumpPowerConnection
