@@ -600,7 +600,7 @@ local function cfgDefault(k, v)
 end
 cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
 cfgDefault("FollowSpeed", 30)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
-cfgDefault("FollowCatchupDelay", 0.5) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowCatchupDelay", 1) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
 cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
 cfgDefault("FollowCatchupDist", 7)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
@@ -623,7 +623,7 @@ local function SendCatchupKeys()
     Key(true, Enum.KeyCode.W)    -- giữ W
     task.wait(0.1)
     Key(true, Enum.KeyCode.Q)    -- nhấn Q khi vẫn đang giữ W
-    task.wait(0.1)
+    task.wait(0.5)
     Key(false, Enum.KeyCode.W)   -- thả cả hai phím
     Key(false, Enum.KeyCode.Q)
 end
