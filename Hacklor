@@ -602,9 +602,8 @@ local function cfgDefault(k, v)
 end
 cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
 cfgDefault("FollowSpeed", 40)         -- tốc độ đi bằng velocity khi bám/đuổi mob (studs/giây), cũng là tốc độ tween nâng Y
-cfgDefault("FollowCatchupDelay", 0.5)   -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
-cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
-cfgDefault("FollowCatchupDist", 7)    -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
+cfgDefault("FollowCatchupDelay", 0.8)   -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowCatchupDist", 10)    -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowUseW", true)        -- [MỚI] giữ W để game vào trạng thái chạy (hướng thật do velocity quyết định)
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
@@ -623,7 +622,7 @@ end
 
 local function PressQ()
     Key(true, Enum.KeyCode.Q)
-    task.delay(0.1, function() Key(false, Enum.KeyCode.Q) end)
+    task.delay(0.2, function() Key(false, Enum.KeyCode.Q) end)
 end
 
 local Mover = {
@@ -838,7 +837,6 @@ local function MoverFollow(hrp, mobRoot)
     local stopDist = math.abs(getgenv().FollowSideX)
 
     -- Đo tốc độ mob (XZ) giữa hai lần lấy mẫu cách nhau >= FOLLOW_INTERVAL.
-    -- Mob bay nhanh hơn FollowKnockSpeed = bị văng: delay ngay, không đợi khoảng cách vượt FollowCatchupDist
     if not Mover.mobLastPos then
         Mover.mobLastPos, Mover.mobLastT = p, now
     elseif now - Mover.mobLastT >= FOLLOW_INTERVAL then
@@ -846,12 +844,11 @@ local function MoverFollow(hrp, mobRoot)
         Mover.mobSpeed = Vector3.new(d.X, 0, d.Z).Magnitude / (now - Mover.mobLastT)
         Mover.mobLastPos, Mover.mobLastT = p, now
     end
-    local knocked = Mover.mobSpeed > getgenv().FollowKnockSpeed
     local far     = gapXZ > math.max(getgenv().FollowCatchupDist, stopDist + 2)
 
     -- Mob bị văng xa: đứng yên FollowCatchupDelay giây rồi mới đuổi theo.
     -- Chỉ áp dụng khi đã từng bám sát mob này (contacted) và không đang nâng Y; tiếp cận mob mới thì không delay
-    if not far and not knocked then
+    if not far then
         Mover.contacted = true
         Mover.farSince = nil
         Mover.keyDone = false                      -- mob đã về tầm bám: lần văng sau sẽ chạy lại chuỗi phím
