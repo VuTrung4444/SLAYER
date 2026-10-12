@@ -446,6 +446,8 @@ AutoFarm:AddToggle({
     end
 })
 
+
+
 local player = game:GetService("Players").LocalPlayer
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
@@ -591,7 +593,7 @@ local function IsTravelEquipped()
     return ok and equipped ~= nil and equipped.Value == 4
 end
 
--- ===== [MỚI] BỘ DI CHUYỂN TWEEN (thay SafeTeleport + CFrame hover) =====
+-- ===== BỘ DI CHUYỂN: tween xa (có noclip) + velocity gần (không noclip) =====
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
 
@@ -599,33 +601,29 @@ local function cfgDefault(k, v)
     if getgenv()[k] == nil then getgenv()[k] = v end
 end
 cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
-cfgDefault("FollowSpeed", 30)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
-cfgDefault("FollowCatchupDelay", 0.5) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowSpeed", 40)         -- tốc độ đi bằng velocity khi bám/đuổi mob (studs/giây), cũng là tốc độ tween nâng Y
+cfgDefault("FollowCatchupDelay", 0.5)   -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
 cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
-cfgDefault("FollowCatchupDist", 10)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
-cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
+cfgDefault("FollowCatchupDist", 7)    -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
+cfgDefault("FollowUseW", true)        -- [MỚI] giữ W để game vào trạng thái chạy (hướng thật do velocity quyết định)
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
 cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
-cfgDefault("FollowRange", 200)        -- [MỚI] mob trong phạm vi này: di chuyển bằng FollowSpeed; ngoài phạm vi: TravelSpeed
+cfgDefault("FollowRange", 250)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
 
--- Chu kỳ cập nhật tween khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
+-- Chu kỳ cập nhật khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
 local FOLLOW_INTERVAL = 0.05
 
--- [MỚI] Chuỗi phím chạy MỘT lần khi hết FollowCatchupDelay, trước khi đuổi theo mob
+-- Chuỗi phím chạy MỘT lần khi hết FollowCatchupDelay, trước khi đuổi theo mob
 local VIM = game:GetService("VirtualInputManager")
 
 local function Key(down, keyCode)
     VIM:SendKeyEvent(down, keyCode, false, game)
 end
 
-local function SendCatchupKeys()
-    Key(true, Enum.KeyCode.W)    -- giữ W
-    task.wait(0.1)
-    Key(true, Enum.KeyCode.Q)    -- nhấn Q khi vẫn đang giữ W
-    task.wait(0.5)
-    Key(false, Enum.KeyCode.W)   -- thả cả hai phím
-    Key(false, Enum.KeyCode.Q)
+local function PressQ()
+    Key(true, Enum.KeyCode.Q)
+    task.delay(0.1, function() Key(false, Enum.KeyCode.Q) end)
 end
 
 local Mover = {
@@ -635,17 +633,43 @@ local Mover = {
     recovering = false, recoverY = 0,
     mobLastPos = nil, mobLastT = 0, mobSpeed = 0,   -- đo tốc độ mob để phát hiện bị văng
     contacted = false, farSince = nil,   -- contacted: đã từng bám sát mob này; farSince: lúc bắt đầu bị văng xa
-    keyDone = false,                     -- [MỚI] đã chạy chuỗi W+Q cho lần mob bị văng hiện tại
+    keyDone = false,                     -- đã chạy chuỗi W+Q cho lần mob bị văng hiện tại
+    wDown = false,                       -- phím W đang được giữ
+    chasing = false,                     -- [MỚI] đang đuổi mob bằng velocity
+    moveConn = nil,                      -- kết nối Stepped ghi velocity / ép hướng
     ownsNoclip = false,
     lastFollow = 0,
     groundT = 0, groundY = nil,
 }
+
+-- Giữ / thả phím W (chỉ gửi sự kiện khi trạng thái thay đổi)
+local function HoldW(on)
+    if Mover.wDown == on then return end
+    Mover.wDown = on
+    Key(on, Enum.KeyCode.W)
+end
+
+-- [MỚI] Bật/tắt trạng thái đuổi mob. Tắt thì triệt tiêu vận tốc ngang đang ghi
+local function SetChase(on)
+    if on then
+        Mover.chasing = true
+        HoldW(getgenv().FollowUseW and true or false)
+    else
+        if Mover.chasing and Mover.hrp and Mover.hrp.Parent then
+            local v = Mover.hrp.AssemblyLinearVelocity
+            Mover.hrp.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
+        end
+        Mover.chasing = false
+        HoldW(false)
+    end
+end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 rayParams.IgnoreWater = true
 
 -- Chỉ gọi noclip()/clip() có sẵn; không đụng vào nếu người dùng đang bật noclip bằng toggle
+-- [LƯU Ý] CHỈ được gọi trong TravelTween (tween xa)
 local function AcquireNoclip()
     if Mover.ownsNoclip then return end
     if Noclip ~= nil and Clip == false then return end   -- toggle noclip của bạn đang bật
@@ -661,6 +685,9 @@ local function ReleaseNoclip()
 end
 
 local function MoverStop()
+    SetChase(false)                                       -- thả W + dừng velocity
+    HoldW(false)
+    if Mover.moveConn then Mover.moveConn:Disconnect(); Mover.moveConn = nil end
     if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
     if Mover.conn  then Mover.conn:Disconnect(); Mover.conn = nil end
     if Mover.value then Mover.value:Destroy(); Mover.value = nil end
@@ -668,7 +695,7 @@ local function MoverStop()
     Mover.recovering = false
     Mover.groundY = nil
     Mover.contacted, Mover.farSince = false, nil
-    Mover.keyDone = false                                 -- [MỚI]
+    Mover.keyDone = false
     Mover.mobLastPos, Mover.mobSpeed = nil, 0
     ReleaseNoclip()
 end
@@ -707,7 +734,8 @@ local function OnHeartbeat()
         return
     end
 
-    -- Chế độ bám mob: X/Z từ tween, Y theo vật lý (trừ lúc đang nâng lên)
+    -- Chế độ bám mob: Heartbeat chỉ quay mặt về phía mob; velocity do VelocityMove (Stepped) ghi.
+    -- Tween chỉ còn dùng để nâng Y khi đang chìm / lệch độ cao so với mob (recovering)
     if Mover.mode ~= "follow" then return end
     local mobRoot = Mover.mobRoot
     if not (mobRoot and mobRoot.Parent) then return end
@@ -715,12 +743,10 @@ local function OnHeartbeat()
     local char   = hrp.Parent
     local cur    = hrp.Position
     local mobPos = mobRoot.Position
-    local x, z   = fv.X, fv.Z
-    local vy     = hrp.AssemblyLinearVelocity.Y
 
     local groundY
     if getgenv().FollowGroundClamp then
-        groundY = GetGroundY(char, hrp, x, z, mobPos.Y)
+        groundY = GetGroundY(char, hrp, cur.X, cur.Z, mobPos.Y)
     end
 
     local tooFar   = math.abs(cur.Y - mobPos.Y) > getgenv().FollowMaxYGap
@@ -729,26 +755,53 @@ local function OnHeartbeat()
         Mover.recovering = true
     end
 
-    local y
     if Mover.recovering then
         Mover.recoverY = math.max(mobPos.Y + 3, groundY or -math.huge)
-        y, vy = fv.Y, 0                                        -- Y đi theo tween giống X/Z
-        if math.abs(cur.Y - Mover.recoverY) < 1.5 then         -- lên đủ gần thì trả về vật lý
+        if not Mover.tween then return end                      -- chờ MoverFollow tạo tween nâng Y
+        if math.abs(cur.Y - Mover.recoverY) < 1.5 then          -- lên đủ gần thì trả về vật lý
             Mover.recovering = false
-            y = cur.Y
+            return
         end
-    else
-        y = cur.Y
+        local pos  = Vector3.new(cur.X, fv.Y, cur.Z)
+        local look = Vector3.new(mobPos.X, fv.Y, mobPos.Z)
+        if (pos - look).Magnitude > 0.05 then
+            hrp.CFrame = CFrame.lookAt(pos, look)
+        else
+            hrp.CFrame = CFrame.new(pos)
+        end
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        return
     end
 
-    local pos  = Vector3.new(x, y, z)
-    local look = Vector3.new(mobPos.X, y, mobPos.Z)
-    if (pos - look).Magnitude > 0.05 then
-        hrp.CFrame = CFrame.lookAt(pos, look)                  -- nhìn mob, không chúi/ngửa
-    else
-        hrp.CFrame = CFrame.new(pos)
+    -- Bình thường: quay mặt về phía mob (giữ nguyên vị trí)
+    local look = Vector3.new(mobPos.X, cur.Y, mobPos.Z)
+    if (cur - look).Magnitude > 0.05 then
+        hrp.CFrame = CFrame.lookAt(cur, look)
     end
-    hrp.AssemblyLinearVelocity = Vector3.new(0, vy, 0)         -- triệt vận tốc ngang, giữ Y
+end
+
+-- [MỚI] CÁCH 2: chạy ở Stepped (trước bước vật lý). Ghi vận tốc ngang trực tiếp theo hướng THẾ GIỚI tới mob,
+-- nên hướng đi không phụ thuộc camera. Humanoid:Move cũng được ép cùng hướng (dùng cho cả lúc dash W+Q)
+local function VelocityMove()
+    if Mover.mode ~= "follow" or Mover.recovering or not Mover.chasing then return end
+
+    local m, hrp = Mover.mobRoot, Mover.hrp
+    if not (m and m.Parent and hrp and hrp.Parent) then return end
+
+    local d    = m.Position - hrp.Position
+    local flat = Vector3.new(d.X, 0, d.Z)
+    local gap  = flat.Magnitude
+    if gap < 0.1 then return end
+    local dir  = flat.Unit
+
+    local hum = hrp.Parent:FindFirstChildOfClass("Humanoid")
+    if hum then hum:Move(dir, false) end    -- false = hướng thế giới, không theo camera
+
+    local base = getgenv().FollowSpeed
+    if not base or base <= 0 then base = hum and hum.WalkSpeed or 16 end
+    local speed = math.min(base, math.max(gap - math.abs(getgenv().FollowSideX), 0) * 30)
+    local vy = hrp.AssemblyLinearVelocity.Y
+    hrp.AssemblyLinearVelocity = Vector3.new(dir.X * speed, vy, dir.Z * speed)
 end
 
 local function MoverEnsure(hrp)
@@ -758,35 +811,33 @@ local function MoverEnsure(hrp)
     Mover.value = Instance.new("Vector3Value")
     Mover.value.Value = hrp.Position
     Mover.conn = RunService.Heartbeat:Connect(OnHeartbeat)
+    Mover.moveConn = RunService.Stepped:Connect(VelocityMove)
 end
 
--- Bám cạnh mob (hover): gọi liên tục trong vòng lặp farm
+-- Bám cạnh mob (hover): gọi liên tục trong vòng lặp farm.
+-- Áp sát mob bằng VELOCITY (không noclip, không tween tới mob). Tween chỉ dùng để nâng Y khi bị chìm/lệch độ cao
 local function MoverFollow(hrp, mobRoot)
     if Mover.mode == "travel" then return end   -- luồng khác đang di chuyển xa
     MoverEnsure(hrp)
     Mover.mode = "follow"
     if Mover.mobRoot ~= mobRoot then
         Mover.contacted, Mover.farSince = false, nil
-        Mover.keyDone = false                                  -- [MỚI]
+        Mover.keyDone = false
         Mover.mobLastPos, Mover.mobSpeed = nil, 0
     end  -- mob mới: tiếp cận bình thường, không delay
     Mover.mobRoot = mobRoot
 
-    if getgenv().FollowNoclip then AcquireNoclip() else ReleaseNoclip() end
-
     local now = tick()
-    if Mover.tween and now - Mover.lastFollow < FOLLOW_INTERVAL then return end   -- throttle
+    if now - Mover.lastFollow < FOLLOW_INTERVAL then return end   -- throttle
     Mover.lastFollow = now
 
-    local p = mobRoot.Position
-    local goalY = Mover.recovering and Mover.recoverY or hrp.Position.Y
-    local goal  = Vector3.new(p.X + getgenv().FollowSideX, goalY, p.Z)
+    local p   = mobRoot.Position
+    local cur = hrp.Position
+    -- Khoảng cách ngang tới mob; dừng lại khi tới trong |FollowSideX| (mặc định 5), có độ trễ 1 stud để không chớp tắt
+    local gapXZ    = Vector3.new(p.X - cur.X, 0, p.Z - cur.Z).Magnitude
+    local stopDist = math.abs(getgenv().FollowSideX)
 
-    -- [MỚI] Mob bị văng xa: đứng yên FollowCatchupDelay giây rồi mới đuổi theo.
-    -- Chỉ áp dụng khi đã từng bám sát mob này (contacted) và không đang nâng Y; tiếp cận mob mới thì không delay
-    local gapXZ = Vector3.new(goal.X - hrp.Position.X, 0, goal.Z - hrp.Position.Z).Magnitude
-
-    -- [MỚI] Đo tốc độ mob (XZ) giữa hai lần lấy mẫu cách nhau >= FOLLOW_INTERVAL.
+    -- Đo tốc độ mob (XZ) giữa hai lần lấy mẫu cách nhau >= FOLLOW_INTERVAL.
     -- Mob bay nhanh hơn FollowKnockSpeed = bị văng: delay ngay, không đợi khoảng cách vượt FollowCatchupDist
     if not Mover.mobLastPos then
         Mover.mobLastPos, Mover.mobLastT = p, now
@@ -796,43 +847,60 @@ local function MoverFollow(hrp, mobRoot)
         Mover.mobLastPos, Mover.mobLastT = p, now
     end
     local knocked = Mover.mobSpeed > getgenv().FollowKnockSpeed
-    local far     = gapXZ > getgenv().FollowCatchupDist
+    local far     = gapXZ > math.max(getgenv().FollowCatchupDist, stopDist + 2)
 
+    -- Mob bị văng xa: đứng yên FollowCatchupDelay giây rồi mới đuổi theo.
+    -- Chỉ áp dụng khi đã từng bám sát mob này (contacted) và không đang nâng Y; tiếp cận mob mới thì không delay
     if not far and not knocked then
         Mover.contacted = true
         Mover.farSince = nil
-        Mover.keyDone = false                      -- [MỚI] mob đã về tầm bám: lần văng sau sẽ chạy lại chuỗi phím
+        Mover.keyDone = false                      -- mob đã về tầm bám: lần văng sau sẽ chạy lại chuỗi phím
     elseif Mover.contacted and not Mover.recovering then
         if not Mover.farSince then
             Mover.farSince = now
+            SetChase(false)                         -- đứng yên tại chỗ ngay lập tức
             if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
-            Mover.value.Value = hrp.Position            -- ghim tại chỗ ngay lập tức, không tween về phía mob
             if getgenv().FarmDebug then
                 warn(string.format("[Follow] mob bị văng: gap=%.1f, mobSpeed=%.1f -> chờ %.1fs",
                     gapXZ, Mover.mobSpeed, getgenv().FollowCatchupDelay))
             end
         end
-        if now - Mover.farSince < getgenv().FollowCatchupDelay then return end
+        if now - Mover.farSince < getgenv().FollowCatchupDelay then
+            SetChase(false)
+            return
+        end
 
-        -- [MỚI] Hết delay: chạy chuỗi W + Q một lần, rồi lần gọi sau mới đuổi theo mob như cũ
+        -- Hết delay: chạy chuỗi W + Q một lần, rồi lần gọi sau mới đuổi theo mob như cũ
         if not Mover.keyDone then
             Mover.keyDone = true
-            SendCatchupKeys()
-            return
+            SetChase(true)
+            PressQ()
         end
     end
 
-    -- [SỬA] Thời gian tween = khoảng cách / FollowSpeed (tốc độ cố định, không bao giờ vượt FollowSpeed).
-    -- Tối thiểu bằng chu kỳ cập nhật để chuyển động liền mạch, không bước giật từng nhịp
-    local t = math.max((goal - hrp.Position).Magnitude / getgenv().FollowSpeed, FOLLOW_INTERVAL)
+    -- Đang chìm / lệch độ cao: ngừng đi ngang, tween nâng Y (tốc độ FollowSpeed)
+    if Mover.recovering then
+        SetChase(false)
+        if not Mover.tween then Mover.value.Value = cur end
+        local goal = Vector3.new(cur.X, Mover.recoverY, cur.Z)
+        local t = math.max(math.abs(goal.Y - cur.Y) / getgenv().FollowSpeed, FOLLOW_INTERVAL)
+        if Mover.tween then Mover.tween:Cancel() end
+        Mover.tween = TweenService:Create(
+            Mover.value,
+            TweenInfo.new(t, Enum.EasingStyle.Linear),
+            { Value = goal }
+        )
+        Mover.tween:Play()
+        return
+    end
+    if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
 
-    if Mover.tween then Mover.tween:Cancel() end
-    Mover.tween = TweenService:Create(
-        Mover.value,
-        TweenInfo.new(t, Enum.EasingStyle.Linear),
-        { Value = goal }
-    )
-    Mover.tween:Play()
+    -- Áp sát bằng velocity: bật đuổi khi còn xa, tắt khi đã tới sát mob
+    if gapXZ > stopDist + 1 then
+        SetChase(true)
+    elseif gapXZ <= stopDist then
+        SetChase(false)
+    end
 end
 
 local function ShouldAbort(opts)
@@ -842,7 +910,8 @@ local function ShouldAbort(opts)
     return false
 end
 
--- Di chuyển xa tới một vị trí (thay cho root.CFrame = cf). Chặn cho tới khi tới nơi hoặc bị hủy
+-- Di chuyển xa tới một vị trí. Chặn cho tới khi tới nơi hoặc bị hủy.
+-- ĐÂY LÀ NƠI DUY NHẤT BẬT NOCLIP (AcquireNoclip), tắt ngay khi xong nhờ MoverStop()
 local function TravelTween(hrp, dest, opts)
     if Mover.mode == "travel" then return false end
     MoverStop()
@@ -876,7 +945,7 @@ local function TravelTween(hrp, dest, opts)
     return (not aborted) and state == Enum.PlaybackState.Completed
 end
 
--- Cổng di chuyển duy nhất của farm/quest/chest/loot:
+-- Cổng di chuyển xa duy nhất của farm/quest/chest/loot:
 -- kiểm tra rương trước VÀ sau SetEquippedForTravel (có yield 1.5s), chỉ di chuyển khi Equipped thực sự bằng 4
 -- opts.farm        = true  -> tự hủy khi tắt Auto Farm
 -- opts.ignoreChest = true  -> dùng cho chính việc đi nhặt rương/loot (không bị ChestBlocked chặn)
@@ -895,7 +964,7 @@ local function SafeMove(dest, opts)
     return TravelTween(hrp, dest, opts)
 end
 getgenv().TweenTravelTo = SafeMove   -- để code AutoChest / AutoLoot gọi: TweenTravelTo(pos, {ignoreChest = true})
--- ===== [HẾT PHẦN MỚI] =====
+-- ===== [HẾT PHẦN DI CHUYỂN] =====
 
 
 local NPCData = {
@@ -985,7 +1054,7 @@ local function GetAndWaitForQuest(player)
         local npcKey, npcData = ResolveNPCName(getgenv().AutoMissionName)
 
         if npcData and npcData.coordinates then
-            -- [SỬA] tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
+            -- tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
             if not SafeMove(npcData.coordinates, { farm = true }) then return end
             getgenv().MissionNPCReached = true
         else
@@ -1014,7 +1083,7 @@ local function GetAndWaitForQuest(player)
             local okPivot, pivot = pcall(function() return npcModel:GetPivot() end)
             if not okPivot or not pivot then return end
 
-            -- [SỬA] tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
+            -- tween tới NPC, chỉ đặt MissionNPCReached khi tới nơi thành công
             if not SafeMove(pivot.Position + Vector3.new(5, 2, 0), { farm = true }) then return end
             getgenv().MissionNPCReached = true
         end
@@ -1073,7 +1142,7 @@ AutoFarm:AddToggle({
         getgenv().MobNameFilter = getgenv().MobNameFilter or ""
 
         if state then
-            -- [MỚI] chặn chạy chồng khi bật/tắt nhanh
+            -- chặn chạy chồng khi bật/tắt nhanh
             getgenv().FarmRunId = (getgenv().FarmRunId or 0) + 1
             local runId = getgenv().FarmRunId
 
@@ -1083,7 +1152,7 @@ AutoFarm:AddToggle({
                 local bossSpawnMoved = false
                 local bossWaitStart = nil
                 local BOSS_WAIT_TIME = 4
-                -- [MỚI] Thời điểm gần nhất đang bám/đánh mob. Còn trong thời gian ân hạn thì KHÔNG về BossInfo
+                -- Thời điểm gần nhất đang bám/đánh mob. Còn trong thời gian ân hạn thì KHÔNG về BossInfo
                 local lastEngagedAt = 0
                 local function BossReturnGrace() return getgenv().BossReturnGrace or 5 end
 
@@ -1202,7 +1271,7 @@ AutoFarm:AddToggle({
 
                 local function TryMoveToBossSpawn()
                     if bossSpawnMoved then return end
-                    -- [MỚI] Vừa bám mob xong (mob chỉ tạm thời mất khỏi danh sách): chưa về BossInfo, chờ tìm lại mob
+                    -- Vừa bám mob xong (mob chỉ tạm thời mất khỏi danh sách): chưa về BossInfo, chờ tìm lại mob
                     if tick() - lastEngagedAt < BossReturnGrace() then return end
 
                     local char = player.Character
@@ -1236,7 +1305,7 @@ AutoFarm:AddToggle({
                                     return
                                 end
 
-                                -- [SỬA] tween tới điểm boss, chỉ đặt cờ khi tới nơi thành công
+                                -- tween tới điểm boss, chỉ đặt cờ khi tới nơi thành công
                                 if getgenv().FarmDebug then
                                     warn("[AutoFarm] Không thấy mob '" .. filter .. "', về BossInfo")
                                 end
@@ -1304,14 +1373,14 @@ AutoFarm:AddToggle({
                     end
                 end
 
-                -- [MỚI] Vị trí đứng cạnh mob: lệch trục X, Y = Y của mob + 3 (rồi rơi xuống đất bằng vật lý)
+                -- Vị trí đứng cạnh mob: lệch trục X, Y = Y của mob + 3 (rồi rơi xuống đất bằng vật lý)
                 local function MobStandPos(mobRoot)
                     local p = mobRoot.Position
                     return Vector3.new(p.X + getgenv().FollowSideX, p.Y + 3, p.Z)
                 end
 
-                -- [SỬA] Tiếp cận mob: ngoài FollowRange (250) thì SetEquippedForTravel + tween xa (TravelSpeed);
-                -- trong FollowRange thì bám bằng tween X/Z (FollowSpeed), gồm cả logic mob bị văng (delay + chuỗi phím W/Q)
+                -- Tiếp cận mob: ngoài FollowRange (250) thì SetEquippedForTravel + tween xa + NOCLIP (SafeMove);
+                -- trong FollowRange thì đi bằng VELOCITY, KHÔNG noclip (gồm cả logic mob bị văng: delay + chuỗi phím W/Q)
                 local function ApproachMob(hrp, mobRoot)
                     local d = (hrp.Position - mobRoot.Position).Magnitude
                     if d > getgenv().FollowRange then
@@ -1345,7 +1414,7 @@ AutoFarm:AddToggle({
                             -- có rương thì thoát vòng quest, quay về kiểm tra rương ở đầu vòng chính
                             if ChestBlocked() then break end
 
-                            -- [MỚI] chưa tới được NPC (tween bị hủy / chưa equip kịp) thì thử lại
+                            -- chưa tới được NPC (tween bị hủy / chưa equip kịp) thì thử lại
                             if not getgenv().MissionNPCReached then
                                 GetAndWaitForQuest(player)
                             end
@@ -1355,7 +1424,7 @@ AutoFarm:AddToggle({
                                 local _, _, npcPos = GetNPCPos()
 
                                 if npcPos then
-                                    -- [SỬA] chỉ tween lại khi bị đẩy lệch khỏi NPC (thay cho teleport mỗi 0.1s)
+                                    -- chỉ tween lại khi bị đẩy lệch khỏi NPC
                                     local d = hrp.Position - npcPos
                                     if Vector3.new(d.X, 0, d.Z).Magnitude > 6 or math.abs(d.Y) > 10 then
                                         SafeMove(npcPos, { farm = true })
@@ -1418,14 +1487,13 @@ AutoFarm:AddToggle({
                                 continue
                             end
 
-                            -- [SỬA] thay 4 dòng CFrame/Velocity cũ bằng bám tween
-                            lastEngagedAt = tick()   -- [MỚI] đang bám mob: BossInfo không còn liên quan
+                            lastEngagedAt = tick()   -- đang bám mob: BossInfo không còn liên quan
                             ApproachMob(hrp, lockedRoot)
                             EquipIfMobNearby(20)
                             continue
                         else
                             MoverStopIf("follow")
-                            -- [MỚI] Mob chết hẳn thì được về BossInfo ngay; chỉ biến mất/đổi model thì chờ trong thời gian ân hạn
+                            -- Mob chết hẳn thì được về BossInfo ngay; chỉ biến mất/đổi model thì chờ trong thời gian ân hạn
                             if h and h.Health <= 0 then lastEngagedAt = 0 end
                             if IsAllBossMode() then
                                 AdvanceAllBoss()
@@ -1462,7 +1530,7 @@ AutoFarm:AddToggle({
                         continue
                     end
 
-                    -- [SỬA] xa thì tween xa (có SetEquippedForTravel), gần thì bám X/Z
+                    -- xa thì tween xa + noclip (có SetEquippedForTravel), gần thì đi bằng velocity (không noclip)
                     if not ApproachMob(hrp, rootPart) then
                         lockedTarget = nil
                         lockedRoot = nil
@@ -1493,7 +1561,6 @@ AutoFarm:AddTextbox({
     end
 })
 
--- [SỬA] Thay textbox "Hover Height" (trục Y) bằng khoảng cách trục X
 AutoFarm:AddTextbox({
     Name = "Khoảng cách X",
     Default = tostring(getgenv().FollowSideX),
@@ -1513,7 +1580,7 @@ AutoFarm:AddTextbox({
     end
 })
 
--- ===== AUTO CHEST / LOOT / SOUL (đã chuyển sang tween) =====
+-- ===== AUTO CHEST / LOOT / SOUL (tween xa qua SafeMove, có noclip trong lúc tween) =====
 getgenv().AutoChest = false
 Ect:AddToggle({
     Name = "Auto Chest",
@@ -1523,7 +1590,7 @@ Ect:AddToggle({
         getgenv().ChestReached = false
 
         if state then
-            -- [MỚI] chặn chạy chồng khi bật/tắt nhanh
+            -- chặn chạy chồng khi bật/tắt nhanh
             getgenv().ChestRunId = (getgenv().ChestRunId or 0) + 1
             local runId = getgenv().ChestRunId
 
@@ -1534,7 +1601,7 @@ Ect:AddToggle({
                     return getgenv().AutoChest and runId == getgenv().ChestRunId
                 end
 
-                -- [MỚI] ignoreChest: đi nhặt rương thì không bị ChestBlocked tự chặn; tắt toggle thì hủy tween
+                -- ignoreChest: đi nhặt rương thì không bị ChestBlocked tự chặn; tắt toggle thì hủy tween
                 local moveOpts = {
                     ignoreChest = true,
                     abort = function() return not Running() end,
@@ -1627,7 +1694,7 @@ Ect:AddToggle({
                             hrp = GetHRP()
                             if not hrp then break end
 
-                            -- [SỬA] tween tới loot (có SetEquippedForTravel trong SafeMove); loot ở gần thì khỏi di chuyển
+                            -- tween tới loot (có SetEquippedForTravel trong SafeMove); loot ở gần thì khỏi di chuyển
                             if (hrp.Position - data.part.Position).Magnitude > 6 then
                                 if not SafeMove(data.part.Position + Vector3.new(3, 3, 0), moveOpts) then
                                     anyRemaining = true
@@ -1698,7 +1765,7 @@ Ect:AddToggle({
                     if soul then
                         if (hrp.Position - soulRoot.Position).Magnitude > 5 then
                             getgenv().ChestReached = false
-                            -- [SỬA] SafeMove đã gồm SetEquippedForTravel; thất bại thì thử lại ở vòng sau
+                            -- SafeMove đã gồm SetEquippedForTravel; thất bại thì thử lại ở vòng sau
                             if not SafeMove(soulRoot.Position + Vector3.new(3, 0, 0), moveOpts) then
                                 continue
                             end
@@ -1721,7 +1788,7 @@ Ect:AddToggle({
                     local prompt, rootPart = GetChestPrompt(chest)
                     if not prompt or not rootPart then continue end
 
-                    -- [SỬA] tween tới rương; nếu bị đẩy lệch xa hơn 12 studs thì tween lại dù đã "Reached"
+                    -- tween tới rương; nếu bị đẩy lệch xa hơn 12 studs thì tween lại dù đã "Reached"
                     local distToChest = (hrp.Position - rootPart.Position).Magnitude
                     if not getgenv().ChestReached or distToChest > 12 then
                         if not SafeMove(rootPart.Position + Vector3.new(3, 0, 0), moveOpts) then
@@ -1746,8 +1813,6 @@ Ect:AddToggle({
         end
     end
 })
-
-
 
 AutoSkill:AddToggle({
     Name = "Thunder",
