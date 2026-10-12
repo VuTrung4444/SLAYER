@@ -599,8 +599,8 @@ local function cfgDefault(k, v)
     if getgenv()[k] == nil then getgenv()[k] = v end
 end
 cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
-cfgDefault("FollowSpeed", 40)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
-cfgDefault("FollowCatchupDelay", 1) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowSpeed", 30)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
+cfgDefault("FollowCatchupDelay", 0.5) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
 cfgDefault("FollowKnockSpeed", 40)    -- mob di chuyển nhanh hơn mức này (studs/giây) = bị văng: delay ngay, không chờ khoảng cách
 cfgDefault("FollowCatchupDist", 7)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
