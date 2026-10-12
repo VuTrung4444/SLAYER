@@ -598,18 +598,24 @@ local RunService   = game:GetService("RunService")
 local function cfgDefault(k, v)
     if getgenv()[k] == nil then getgenv()[k] = v end
 end
-cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (âm = phía bên kia)
-cfgDefault("FollowTweenTime", 0.15)   -- thời gian tween mỗi lần cập nhật khi bám mob
+cfgDefault("FollowSideX", 6)          -- khoảng cách trục X so với mob (âm = phía bên kia)
+cfgDefault("FollowSpeed", 50)        -- tốc độ tối đa khi bám/đuổi theo mob (studs/giây), tách riêng với TravelSpeed
+cfgDefault("FollowCatchupDelay", 0.5) -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
+cfgDefault("FollowCatchupDist", 8)   -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
 cfgDefault("FollowNoclip", true)      -- bám mob có bật noclip hay không
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
-cfgDefault("TravelSpeed", 200)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+
+-- Chu kỳ cập nhật tween khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
+local FOLLOW_INTERVAL = 0.05
 
 local Mover = {
     value = nil, tween = nil, conn = nil,
     hrp = nil, mode = nil,            -- mode: "follow" | "travel" | nil
     mobRoot = nil,
     recovering = false, recoverY = 0,
+    contacted = false, farSince = nil,   -- contacted: đã từng bám sát mob này; farSince: lúc bắt đầu bị văng xa
     ownsNoclip = false,
     lastFollow = 0,
     groundT = 0, groundY = nil,
@@ -641,6 +647,7 @@ local function MoverStop()
     Mover.hrp, Mover.mode, Mover.mobRoot = nil, nil, nil
     Mover.recovering = false
     Mover.groundY = nil
+    Mover.contacted, Mover.farSince = false, nil
     ReleaseNoclip()
 end
 
@@ -736,22 +743,42 @@ local function MoverFollow(hrp, mobRoot)
     if Mover.mode == "travel" then return end   -- luồng khác đang di chuyển xa
     MoverEnsure(hrp)
     Mover.mode = "follow"
+    if Mover.mobRoot ~= mobRoot then Mover.contacted, Mover.farSince = false, nil end  -- mob mới: tiếp cận bình thường, không delay
     Mover.mobRoot = mobRoot
 
     if getgenv().FollowNoclip then AcquireNoclip() else ReleaseNoclip() end
 
     local now = tick()
-    if Mover.tween and now - Mover.lastFollow < 0.05 then return end   -- throttle
+    if Mover.tween and now - Mover.lastFollow < FOLLOW_INTERVAL then return end   -- throttle
     Mover.lastFollow = now
 
     local p = mobRoot.Position
     local goalY = Mover.recovering and Mover.recoverY or hrp.Position.Y
     local goal  = Vector3.new(p.X + getgenv().FollowSideX, goalY, p.Z)
 
+    -- [MỚI] Mob bị văng xa: đứng yên FollowCatchupDelay giây rồi mới đuổi theo.
+    -- Chỉ áp dụng khi đã từng bám sát mob này (contacted) và không đang nâng Y; tiếp cận mob mới thì không delay
+    local gapXZ = Vector3.new(goal.X - hrp.Position.X, 0, goal.Z - hrp.Position.Z).Magnitude
+    if gapXZ <= getgenv().FollowCatchupDist then
+        Mover.contacted = true
+        Mover.farSince = nil
+    elseif Mover.contacted and not Mover.recovering then
+        if not Mover.farSince then
+            Mover.farSince = now
+            if Mover.tween then Mover.tween:Cancel(); Mover.tween = nil end
+            Mover.value.Value = hrp.Position            -- ghim tại chỗ, không tween về phía mob
+        end
+        if now - Mover.farSince < getgenv().FollowCatchupDelay then return end
+    end
+
+    -- [SỬA] Thời gian tween = khoảng cách / FollowSpeed (tốc độ cố định, không bao giờ vượt FollowSpeed).
+    -- Tối thiểu bằng chu kỳ cập nhật để chuyển động liền mạch, không bước giật từng nhịp
+    local t = math.max((goal - hrp.Position).Magnitude / getgenv().FollowSpeed, FOLLOW_INTERVAL)
+
     if Mover.tween then Mover.tween:Cancel() end
     Mover.tween = TweenService:Create(
         Mover.value,
-        TweenInfo.new(getgenv().FollowTweenTime, Enum.EasingStyle.Linear),
+        TweenInfo.new(t, Enum.EasingStyle.Linear),
         { Value = goal }
     )
     Mover.tween:Play()
