@@ -2016,6 +2016,34 @@ Ect:AddToggle({
     end
 })
 
+local CAM = game:GetService("ReplicatedStorage"):WaitForChild("CAM")
+local manage_cd = require(CAM.Global.Subsets.Gameplay.manage_cd)
+
+local DASH_COOLDOWN = 0.1
+local dashHookEnabled = false
+
+-- Lưu hàm gốc một lần, kể cả khi chạy lại script
+if not getgenv().__origSetCd then
+    getgenv().__origSetCd = manage_cd.set_skill_cd
+end
+local orig = getgenv().__origSetCd
+
+-- Cài hook (luôn dựa trên hàm gốc, nên chạy lại script không bị chồng hook)
+manage_cd.set_skill_cd = function(plr, skill, cd, ...)
+    if dashHookEnabled and skill == "Dash" then
+        return orig(plr, skill, DASH_COOLDOWN, ...)
+    end
+    return orig(plr, skill, cd, ...)
+end
+
+Ect:AddToggle({
+    Name = "Fast Dash",
+    Default = false,
+    Callback = function(value)
+        dashHookEnabled = value
+    end
+})
+
 local autoFishing = false
 
 local player = game:GetService("Players").LocalPlayer
