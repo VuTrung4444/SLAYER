@@ -606,6 +606,7 @@ cfgDefault("FollowUseW", true)        -- giữ W để game vào trạng thái c
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
 cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("TravelHeight", 200)       -- CHỈ khi di chuyển tới BossInfo: lên cao thêm chừng này (studs) rồi mới đi ngang, tới nơi mới hạ xuống (0 = đi thẳng)
 cfgDefault("FollowRange", 250)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
 cfgDefault("StuckDelay", 5)           -- (giây) lệch Y quá StuckYGap, hoặc không tiến lại gần mob, kéo dài chừng này thời gian = bị kẹt
 cfgDefault("StuckYGap", 20)           -- mob cao/thấp hơn nhân vật quá mức này (studs) được tính là lệch Y
@@ -910,6 +911,11 @@ end
 
 -- Di chuyển xa tới một vị trí. Chặn cho tới khi tới nơi hoặc bị hủy.
 -- ĐÂY LÀ NƠI DUY NHẤT BẬT NOCLIP (AcquireNoclip), tắt ngay khi xong nhờ MoverStop()
+-- [MỚI] opts.lift = true (chỉ dùng cho chuyến tới BossInfo) thì đi theo 3 chặng để tránh va vào khối làm mất trạng thái Equipped = 4;
+--       các chuyến khác (ngắn) vẫn đi thẳng như cũ. 3 chặng gồm:
+--   (1) lên cao thẳng đứng tới độ cao hành trình  (2) bay ngang tới đúng X/Z của đích ở độ cao đó
+--   (3) hạ thẳng xuống Y của đích
+-- Độ cao hành trình = max(Y hiện tại, Y đích) + TravelHeight, để đích cao hơn chỗ đứng vẫn được bay qua phía trên
 local function TravelTween(hrp, dest, opts)
     if Mover.mode == "travel" then return false end
     MoverStop()
@@ -918,29 +924,46 @@ local function TravelTween(hrp, dest, opts)
     AcquireNoclip()
 
     Mover.value.Value = hrp.Position
-    local dist = (dest - hrp.Position).Magnitude
-    local t = math.max(dist / getgenv().TravelSpeed, 0.1)   -- tốc độ ổn định; 0.1s tối thiểu để tween không quá ngắn
 
-    local tw = TweenService:Create(Mover.value, TweenInfo.new(t, Enum.EasingStyle.Linear), { Value = dest })
-    Mover.tween = tw
+    -- Chạy một chặng tween tới target, trả về true khi tới nơi, false khi bị hủy
+    local function RunSegment(target)
+        local dist = (target - Mover.value.Value).Magnitude
+        if dist < 0.05 then return true end
+        local t = math.max(dist / getgenv().TravelSpeed, 0.1)   -- tốc độ ổn định; 0.1s tối thiểu để tween không quá ngắn
 
-    local state
-    local c = tw.Completed:Connect(function(s) state = s end)
-    tw:Play()
+        local tw = TweenService:Create(Mover.value, TweenInfo.new(t, Enum.EasingStyle.Linear), { Value = target })
+        Mover.tween = tw
 
-    local aborted = false
-    while state == nil do
-        if not hrp.Parent or ShouldAbort(opts) then
-            aborted = true
-            tw:Cancel()
-            break
+        local state
+        local c = tw.Completed:Connect(function(s) state = s end)
+        tw:Play()
+
+        while state == nil do
+            if not hrp.Parent or ShouldAbort(opts) then
+                tw:Cancel()
+                c:Disconnect()
+                return false
+            end
+            RunService.Heartbeat:Wait()
         end
-        RunService.Heartbeat:Wait()
+        c:Disconnect()
+        return state == Enum.PlaybackState.Completed
     end
-    c:Disconnect()
+
+    local start  = hrp.Position
+    local height = (opts and opts.lift) and (getgenv().TravelHeight or 0) or 0
+    local ok
+    if height > 0 then
+        local cruiseY = math.max(start.Y, dest.Y) + height
+        ok = RunSegment(Vector3.new(start.X, cruiseY, start.Z))      -- (1) lên cao
+            and RunSegment(Vector3.new(dest.X, cruiseY, dest.Z))     -- (2) bay ngang, giữ nguyên độ cao
+            and RunSegment(dest)                                     -- (3) hạ xuống Y của đích
+    else
+        ok = RunSegment(dest)                                        -- TravelHeight = 0: đi thẳng như cũ
+    end
 
     MoverStop()   -- trả nhân vật về vật lý bình thường, gỡ noclip do script bật
-    return (not aborted) and state == Enum.PlaybackState.Completed
+    return ok
 end
 
 -- Cổng di chuyển xa duy nhất của farm/quest/chest/loot:
@@ -948,6 +971,7 @@ end
 -- opts.farm        = true  -> tự hủy khi tắt Auto Farm
 -- opts.ignoreChest = true  -> dùng cho chính việc đi nhặt rương/loot (không bị ChestBlocked chặn)
 -- opts.abort       = function() return bool end  -> điều kiện hủy tùy ý
+-- opts.lift        = true  -> lên cao TravelHeight rồi bay ngang, tới nơi mới hạ xuống (chỉ dùng cho BossInfo)
 local function SafeMove(dest, opts)
     opts = opts or {}
     if not opts.ignoreChest and ChestBlocked() then return false end
@@ -1307,7 +1331,7 @@ AutoFarm:AddToggle({
                                 if getgenv().FarmDebug then
                                     warn("[AutoFarm] Không thấy mob '" .. filter .. "', về BossInfo")
                                 end
-                                if SafeMove(center, { farm = true }) then
+                                if SafeMove(center, { farm = true, lift = true }) then
                                     bossSpawnMoved = true
                                     bossWaitStart = tick()
                                 end
