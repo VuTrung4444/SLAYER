@@ -2016,33 +2016,56 @@ Ect:AddToggle({
     end
 })
 
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 local CAM = game:GetService("ReplicatedStorage"):WaitForChild("CAM")
-local manage_cd = require(CAM.Global.Subsets.Gameplay.manage_cd)
 
 local DASH_COOLDOWN = 0.1
-local dashHookEnabled = false
+getgenv().FastDashEnabled = false
 
--- Lưu hàm gốc một lần, kể cả khi chạy lại script
-if not getgenv().__origSetCd then
-    getgenv().__origSetCd = manage_cd.set_skill_cd
-end
-local orig = getgenv().__origSetCd
+-- Tên object cooldown của Dash (CoolDownName hoặc "Dash")
+local dashName = "Dash"
+pcall(function()
+    local info = require(CAM.Global.PlayerProfile).skill_info["Dash"]
+    dashName = info.CoolDownName or "Dash"
+end)
 
--- Cài hook (luôn dựa trên hàm gốc, nên chạy lại script không bị chồng hook)
-manage_cd.set_skill_cd = function(plr, skill, cd, ...)
-    if dashHookEnabled and skill == "Dash" then
-        return orig(plr, skill, DASH_COOLDOWN, ...)
-    end
-    return orig(plr, skill, cd, ...)
+-- Ngắt kết nối của lần chạy trước để chạy lại script không bị nhân đôi
+if getgenv().__fastDashConns then
+    for _, c in ipairs(getgenv().__fastDashConns) do pcall(function() c:Disconnect() end) end
 end
+local conns = {}
+getgenv().__fastDashConns = conns
+
+local function watchSHC(shc)
+    table.insert(conns, shc.ChildAdded:Connect(function(o)
+        if getgenv().FastDashEnabled and o.Name == dashName and o:IsA("NumberValue") then
+            task.delay(DASH_COOLDOWN, function()
+                if o.Parent then o:Destroy() end
+            end)
+        end
+    end))
+end
+
+local function watchChar(char)
+    local shc = char:FindFirstChild("SHC")
+    if shc then watchSHC(shc) end
+    table.insert(conns, char.ChildAdded:Connect(function(c)
+        if c.Name == "SHC" then watchSHC(c) end
+    end))
+end
+
+if player.Character then watchChar(player.Character) end
+table.insert(conns, player.CharacterAdded:Connect(watchChar))
 
 Ect:AddToggle({
     Name = "Fast Dash",
     Default = false,
     Callback = function(value)
-        dashHookEnabled = value
+        getgenv().FastDashEnabled = (value == true)
     end
 })
+
 
 local autoFishing = false
 
