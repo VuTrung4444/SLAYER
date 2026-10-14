@@ -446,8 +446,6 @@ AutoFarm:AddToggle({
     end
 })
 
-
-
 local player = game:GetService("Players").LocalPlayer
 local function SetEquippedForTravel()
     local ok, equipped = pcall(function()
@@ -604,11 +602,14 @@ cfgDefault("FollowSideX", 5)          -- khoảng cách trục X so với mob (�
 cfgDefault("FollowSpeed", 40)         -- tốc độ đi bằng velocity khi bám/đuổi mob (studs/giây), cũng là tốc độ tween nâng Y
 cfgDefault("FollowCatchupDelay", 0.8)   -- mob bị văng xa: chờ bấy nhiêu giây rồi mới đuổi theo
 cfgDefault("FollowCatchupDist", 10)    -- cách điểm bám quá mức này (studs) thì tính là bị văng xa
-cfgDefault("FollowUseW", true)        -- [MỚI] giữ W để game vào trạng thái chạy (hướng thật do velocity quyết định)
+cfgDefault("FollowUseW", true)        -- giữ W để game vào trạng thái chạy (hướng thật do velocity quyết định)
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
 cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
 cfgDefault("FollowRange", 250)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
+cfgDefault("StuckDelay", 5)           -- (giây) lệch Y quá StuckYGap, hoặc không tiến lại gần mob, kéo dài chừng này thời gian = bị kẹt
+cfgDefault("StuckYGap", 20)           -- mob cao/thấp hơn nhân vật quá mức này (studs) được tính là lệch Y
+cfgDefault("StuckMinMove", 2)         -- khoảng cách tới mob đổi ít hơn mức này (studs) sau StuckDelay = không tiến triển
 
 -- Chu kỳ cập nhật khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
 local FOLLOW_INTERVAL = 0.05
@@ -634,7 +635,7 @@ local Mover = {
     contacted = false, farSince = nil,   -- contacted: đã từng bám sát mob này; farSince: lúc bắt đầu bị văng xa
     keyDone = false,                     -- đã chạy chuỗi W+Q cho lần mob bị văng hiện tại
     wDown = false,                       -- phím W đang được giữ
-    chasing = false,                     -- [MỚI] đang đuổi mob bằng velocity
+    chasing = false,                     -- đang đuổi mob bằng velocity
     moveConn = nil,                      -- kết nối Stepped ghi velocity / ép hướng
     ownsNoclip = false,
     lastFollow = 0,
@@ -648,7 +649,7 @@ local function HoldW(on)
     Key(on, Enum.KeyCode.W)
 end
 
--- [MỚI] Bật/tắt trạng thái đuổi mob. Tắt thì triệt tiêu vận tốc ngang đang ghi
+-- Bật/tắt trạng thái đuổi mob. Tắt thì triệt tiêu vận tốc ngang đang ghi
 local function SetChase(on)
     if on then
         Mover.chasing = true
@@ -779,7 +780,7 @@ local function OnHeartbeat()
     end
 end
 
--- [MỚI] CÁCH 2: chạy ở Stepped (trước bước vật lý). Ghi vận tốc ngang trực tiếp theo hướng THẾ GIỚI tới mob,
+-- Chạy ở Stepped (trước bước vật lý). Ghi vận tốc ngang trực tiếp theo hướng THẾ GIỚI tới mob,
 -- nên hướng đi không phụ thuộc camera. Humanoid:Move cũng được ép cùng hướng (dùng cho cả lúc dash W+Q)
 local function VelocityMove()
     if Mover.mode ~= "follow" or Mover.recovering or not Mover.chasing then return end
@@ -1376,14 +1377,80 @@ AutoFarm:AddToggle({
                     return Vector3.new(p.X + getgenv().FollowSideX, p.Y + 3, p.Z)
                 end
 
+                -- [MỚI] Phát hiện kẹt. Trả về (true, lý do) khi:
+                --   (1) mob cao/thấp hơn nhân vật quá StuckYGap liên tục StuckDelay giây, HOẶC
+                --   (2) nhân vật chưa tới sát mob nhưng khoảng cách tới mob không đổi (< StuckMinMove) sau StuckDelay giây
+                -- Điều kiện "chưa tới sát mob" tránh báo kẹt oan khi đang đứng cạnh mob để đánh (khoảng cách đứng yên là bình thường)
+                local stuckTarget, stuckYSince, stuckRefT, stuckRefDist, stuckLastCall = nil, nil, nil, nil, 0
+
+                local function ResetStuck()
+                    stuckYSince, stuckRefT, stuckRefDist = nil, nil, nil
+                end
+
+                local function CheckStuck(hrp, mobRoot)
+                    local now = tick()
+                    -- Mob mới, hoặc ApproachMob bị gián đoạn > 1 giây (rương / quest / chờ boss): đếm lại từ đầu
+                    if stuckTarget ~= mobRoot or now - stuckLastCall > 1 then
+                        stuckTarget = mobRoot
+                        ResetStuck()
+                    end
+                    stuckLastCall = now
+
+                    local d     = hrp.Position - mobRoot.Position
+                    local dist  = d.Magnitude
+                    local gapXZ = Vector3.new(d.X, 0, d.Z).Magnitude
+                    local delay = getgenv().StuckDelay
+
+                    -- (1) Lệch Y liên tục
+                    if math.abs(d.Y) > getgenv().StuckYGap then
+                        stuckYSince = stuckYSince or now
+                        if now - stuckYSince >= delay then
+                            ResetStuck()
+                            return true, string.format("lệch Y %.1f kéo dài %.0fs", d.Y, delay)
+                        end
+                    else
+                        stuckYSince = nil
+                    end
+
+                    -- (2) Chưa tới sát mob mà khoảng cách không đổi
+                    if gapXZ > math.abs(getgenv().FollowSideX) + 2 then
+                        if not stuckRefT then
+                            stuckRefT, stuckRefDist = now, dist
+                        elseif now - stuckRefT >= delay then
+                            if math.abs(dist - stuckRefDist) < getgenv().StuckMinMove then
+                                ResetStuck()
+                                return true, string.format("khoảng cách %.1f không đổi sau %.0fs", dist, delay)
+                            end
+                            stuckRefT, stuckRefDist = now, dist   -- có tiến triển: đặt mốc mới
+                        end
+                    else
+                        stuckRefT = nil                            -- đã tới sát mob
+                    end
+
+                    return false
+                end
+
                 -- Tiếp cận mob: ngoài FollowRange (250) thì SetEquippedForTravel + tween xa + NOCLIP (SafeMove);
-                -- trong FollowRange thì đi bằng VELOCITY, KHÔNG noclip (gồm cả logic mob bị văng: delay + chuỗi phím W/Q)
+                -- trong FollowRange thì đi bằng VELOCITY, KHÔNG noclip (gồm cả logic mob bị văng: delay + chuỗi phím W/Q).
+                -- [MỚI] Bị kẹt / lệch Y quá lâu thì cũng tween + noclip tới mob bất kể khoảng cách
                 local function ApproachMob(hrp, mobRoot)
                     local d = (hrp.Position - mobRoot.Position).Magnitude
                     if d > getgenv().FollowRange then
                         MoverStopIf("follow")
                         return SafeMove(MobStandPos(mobRoot), { farm = true })
                     end
+
+                    local stuck, why = CheckStuck(hrp, mobRoot)
+                    if stuck then
+                        if getgenv().FarmDebug then
+                            warn("[AutoFarm] Bị kẹt (" .. why .. ") -> tween + noclip tới mob")
+                        end
+                        MoverStopIf("follow")
+                        -- SafeMove đã gồm SetEquippedForTravel() + kiểm tra Equipped == 4 + tween + noclip
+                        SafeMove(MobStandPos(mobRoot), { farm = true })
+                        return true   -- không xóa mục tiêu dù tween bị hủy (rương...); sẽ đếm kẹt lại từ đầu
+                    end
+
                     MoverFollow(hrp, mobRoot)
                     return true
                 end
@@ -1810,6 +1877,7 @@ Ect:AddToggle({
         end
     end
 })
+
 
 AutoSkill:AddToggle({
     Name = "Thunder",
