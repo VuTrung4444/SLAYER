@@ -2160,6 +2160,90 @@ Ect:AddToggle({
     end
 })
 
+getgenv().InfStamina = false
+Ect:AddToggle({
+    Name = "Infinite Stamina",
+    Default = false,
+    Callback = function(state)
+        getgenv().InfStamina = state
+        if not state then return end
+
+        getgenv().InfStaminaRunId = (getgenv().InfStaminaRunId or 0) + 1
+        local runId = getgenv().InfStaminaRunId
+
+        task.spawn(function()
+            local Players           = game:GetService("Players")
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local lp                = Players.LocalPlayer
+
+            local function Running()
+                return getgenv().InfStamina and runId == getgenv().InfStaminaRunId
+            end
+
+            -- Tìm đối tượng Stamina của chính mình (không dùng require)
+            local function FindStamina()
+                local ps     = ReplicatedStorage:FindFirstChild("Player_Service")
+                local values = ps and ps:FindFirstChild("Values")
+                local folder = values and values:FindFirstChild(lp.Name)
+                local direct = folder and folder:FindFirstChild("Stamina")
+                if direct then return direct end
+
+                for _, root in ipairs({ ReplicatedStorage, lp }) do
+                    for _, d in ipairs(root:GetDescendants()) do
+                        if d.Name == "Stamina" and d:IsA("ValueBase") and d:FindFirstAncestor(lp.Name) then
+                            return d
+                        end
+                    end
+                end
+            end
+
+            local stamina
+            local t0 = tick()
+            repeat
+                stamina = FindStamina()
+                if not stamina then task.wait(0.5) end
+            until stamina or tick() - t0 > 10 or not Running()
+
+            if not Running() then return end
+            if not stamina then
+                warn("[InfStamina] Không tìm thấy Stamina")
+                return
+            end
+
+            local function Refill()
+                if not Running() then return end
+                local ok, max = pcall(function() return stamina.MaxValue end)
+                if not (ok and typeof(max) == "number") then max = 999 end
+                if stamina.Value < max then
+                    stamina.Value = max
+                end
+            end
+
+            local conn
+            local function Bind()
+                if conn then conn:Disconnect() end
+                conn = stamina.Changed:Connect(Refill)   -- vừa bị trừ là nạp lại ngay
+                Refill()
+            end
+            Bind()
+
+            while Running() do
+                task.wait(2)
+                if not stamina.Parent then
+                    local new = FindStamina()
+                    if new then
+                        stamina = new
+                        Bind()
+                    end
+                else
+                    Refill()
+                end
+            end
+
+            if conn then conn:Disconnect() end
+        end)
+    end
+})
 
 local autoFishing = false
 
