@@ -1997,89 +1997,139 @@ Ect:AddToggle({
     end
 })
 
-AutoSkill:AddToggle({
-    Name = "Thunder",
-    Default = false,
-    Callback = function(state)
-        getgenv().AutoThunderClap = state
+-- ===== AUTO SKILL =====
+local Players = game:GetService("Players")
+local VIM     = game:GetService("VirtualInputManager")
+local player  = Players.LocalPlayer
 
-        if state then
-            task.spawn(function()
-                local player = game:GetService("Players").LocalPlayer
-                local Event = game:GetService("ReplicatedStorage")
-                    .Communication.ServerAndClient.Signals.SignalEvent.Event
+-- Cấu hình
+local RANGE       = 30     -- chỉ dùng skill nếu có mob trong khoảng này (studs)
+local KEY_DELAY   = 0.2    -- khoảng cách giữa các lần gửi phím / lần kiểm tra Rotation
+local MAX_RETRY   = 5      -- số lần gửi lại một phím nếu Rotation không đổi, quá mức thì bỏ qua skill đó
+local WAIT_TIMEOUT = 30    -- tối đa chờ cooldown kết thúc (giây)
+local RETRY_GAP = 0.5
+getgenv().AutoSkillDebug = true   -- in giá trị Rotation
 
-                while getgenv().AutoThunderClap do
-                    local char = player.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if not hrp then task.wait(1) continue end
+-- 2-Skill = Z, 3-Skill = X, 4-Skill = C, 5-Skill = V, 6-Skill = B
+local skills = {
+    { name = "Z", key = Enum.KeyCode.Z, slot = 2, enabled = false },
+    { name = "X", key = Enum.KeyCode.X, slot = 3, enabled = false },
+    { name = "C", key = Enum.KeyCode.C, slot = 4, enabled = false },
+    { name = "V", key = Enum.KeyCode.V, slot = 5, enabled = false },
+    { name = "B", key = Enum.KeyCode.B, slot = 6, enabled = false },
+}
 
-                    local mobRoot = nil
-                    local ok, regions = pcall(function()
-                        return workspace.Humanoids.Regions:GetChildren()
-                    end)
-                    if ok and regions then
-                        local filter = (getgenv().MobNameFilter or ""):lower():match("^%s*(.-)%s*$")
-                        for _, region in ipairs(regions) do
-                            local activeNpcs = region:FindFirstChild("ActiveNpcs")
-                            if not activeNpcs then continue end
-                            for _, folder in ipairs(activeNpcs:GetChildren()) do
-                                for _, npcModel in ipairs(folder:GetChildren()) do
-                                    if not npcModel:IsA("Model") then continue end
-                                    if filter ~= "" and npcModel.Name:lower() ~= filter then continue end
-                                    local h = npcModel:FindFirstChildWhichIsA("Humanoid", true)
-                                    local root = npcModel:FindFirstChild("HumanoidRootPart")
-                                    if h and h.Health > 0 and root then
-                                        mobRoot = root
-                                        break
-                                    end
-                                end
-                                if mobRoot then break end
-                            end
-                            if mobRoot then break end
+local masterEnabled = false
+local runId = 0
+local function Alive(id) return masterEnabled and id == runId end
+
+-- ===== Kiểm soát khoảng cách: có mob sống trong RANGE không =====
+local function IsMobInRange(range)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local ok, regions = pcall(function() return workspace.Humanoids.Regions:GetChildren() end)
+    if not ok or not regions then return false end
+
+    for _, region in ipairs(regions) do
+        local active = region:FindFirstChild("ActiveNpcs")
+        if active then
+            for _, folder in ipairs(active:GetChildren()) do
+                for _, npc in ipairs(folder:GetChildren()) do
+                    if npc:IsA("Model") then
+                        local h = npc:FindFirstChildWhichIsA("Humanoid", true)
+                        local root = npc:FindFirstChild("HumanoidRootPart")
+                        if h and h.Health > 0 and root
+                            and (hrp.Position - root.Position).Magnitude <= range then
+                            return true
                         end
                     end
-
-
-                    if not mobRoot then
-                        task.wait(1)
-                        continue
-                    end
-
-                    local dist = (hrp.Position - mobRoot.Position).Magnitude
-                    if dist > 50 then
-                        task.wait(1)
-                        continue
-                    end
-
-                    local targetPos = mobRoot.Position
-
-                    Event:FireServer(
-                        "server_skill_controller_signaler",
-                        "Unknowing Fire",
-                        "Hold",
-                        targetPos
-                    )
-                    task.wait(0.1)
-
-                    Event:FireServer(
-                        "server_skill_controller_signaler",
-                        "Unknowing Fire",
-                        "UnHold",
-                        targetPos
-                    )
-                    task.wait(0.1)
-
-                    Event:FireServer(
-                        "server_skill_controller_signaler",
-                        "Unknowing Fire",
-                        "Cancel",
-                        targetPos
-                    )
-
-                    task.wait(12)
                 end
-            end)
+            end
+        end
+    end
+    return false
+end
+
+-- ===== Đọc Rotation của 2 UIGradient (Right / Left) =====
+local function ReadRotation(slot)
+    local ok, r, l = pcall(function()
+        local holder = player.PlayerGui.ComponentsHolder.BottomHolder.SkillsHolder
+        local img = holder[slot .. "-Skill"].ImageLabel
+        return img.Right.ImageLabel.UIGradient.Rotation,
+               img.Left.ImageLabel.UIGradient.Rotation
+    end)
+    if ok then return r, l end
+    return nil, nil
+end
+
+local function PressKey(keyCode)
+    VIM:SendKeyEvent(true, keyCode, false, game)
+    task.wait(0.05)
+    VIM:SendKeyEvent(false, keyCode, false, game)
+end
+
+
+
+local function Run(id)
+    for _, s in ipairs(skills) do
+        s.lastR, s.lastL, s.nextTry = nil, nil, 0
+    end
+
+    while Alive(id) do
+        task.wait(KEY_DELAY)
+        if not Alive(id) then break end
+
+        local inRange = IsMobInRange(RANGE)
+        local pressed = false
+
+        for _, s in ipairs(skills) do
+            if s.enabled then
+                local r, l = ReadRotation(s.slot)
+
+                -- Rotation đổi so với lần đọc trước = đang hồi chiêu
+                local cooling = (s.lastR ~= nil) and (r ~= s.lastR or l ~= s.lastL)
+                s.lastR, s.lastL = r, l
+
+                if getgenv().AutoSkillDebug then
+                    print(string.format("[AutoSkill] %s | Right: %s | Left: %s | hồi: %s",
+                        s.name, tostring(r), tostring(l), tostring(cooling)))
+                end
+
+                -- Mỗi lượt chỉ gửi 1 phím: skill đầu tiên chưa hồi và đến hạn thử
+                if inRange and not pressed and not cooling and tick() >= s.nextTry then
+                    PressKey(s.key)
+                    s.nextTry = tick() + RETRY_GAP
+                    pressed = true
+                end
+            else
+                s.lastR, s.lastL = nil, nil
+            end
+        end
+    end
+end
+
+-- ===== Toggle từng phím =====
+for _, s in ipairs(skills) do
+    AutoSkill:AddToggle({
+        Name = "Skill " .. s.name,
+        Default = false,
+        Callback = function(value)
+            s.enabled = (value == true)
+        end
+    })
+end
+
+-- ===== Toggle tổng =====
+AutoSkill:AddToggle({
+    Name = "Auto Skill",
+    Default = false,
+    Callback = function(value)
+        masterEnabled = (value == true)
+        runId += 1                       -- huỷ vòng lặp cũ, tránh chạy chồng
+        if masterEnabled then
+            task.spawn(Run, runId)
         end
     end
 })
@@ -2784,8 +2834,6 @@ Ect:AddToggle({
         Event:InvokeServer("SunDamage", not state)
     end
 })]]
-
-
 
 Ect:AddButton({
 		Name = "Reset",
