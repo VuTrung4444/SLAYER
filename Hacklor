@@ -607,10 +607,10 @@ cfgDefault("FollowCatchupDist", 10)    -- cách điểm bám quá mức này (st
 cfgDefault("FollowUseW", true)        -- giữ W để game vào trạng thái chạy (hướng thật do velocity quyết định)
 cfgDefault("FollowGroundClamp", true) -- phát hiện chìm dưới mặt đất
 cfgDefault("FollowMaxYGap", 12)       -- lệch Y so với mob quá mức này thì nâng lên
-cfgDefault("TravelSpeed", 150)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
+cfgDefault("TravelSpeed", 250)        -- tốc độ di chuyển xa (studs/giây), thời gian = khoảng cách / tốc độ
 cfgDefault("TravelHeight", 200)       -- CHỈ khi di chuyển tới BossInfo: lên cao thêm chừng này (studs) rồi mới đi ngang, tới nơi mới hạ xuống (0 = đi thẳng)
-cfgDefault("TravelLiftMinDist", 400)  -- chỉ bay lên TravelHeight khi đích cách >= chừng này (studs); gần hơn thì đi thẳng
-cfgDefault("FollowRange", 250)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
+cfgDefault("TravelLiftMinDist", 200)  -- chỉ bay lên TravelHeight khi đích cách >= chừng này (studs); gần hơn thì đi thẳng
+cfgDefault("FollowRange", 180)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
 cfgDefault("StuckDelay", 3)           -- (giây) lệch Y quá StuckYGap, hoặc không tiến lại gần mob, kéo dài chừng này thời gian = bị kẹt
 cfgDefault("StuckYGap", 10)           -- mob cao/thấp hơn nhân vật quá mức này (studs) được tính là lệch Y
 cfgDefault("StuckMinMove", 2)         -- khoảng cách tới mob đổi ít hơn mức này (studs) sau StuckDelay = không tiến triển
@@ -2003,7 +2003,7 @@ local VIM     = game:GetService("VirtualInputManager")
 local player  = Players.LocalPlayer
 
 -- Cấu hình
-local RANGE       = 30     -- chỉ dùng skill nếu có mob trong khoảng này (studs)
+local RANGE       = 10     -- chỉ dùng skill nếu có mob trong khoảng này (studs)
 local KEY_DELAY   = 0.2    -- khoảng cách giữa các lần gửi phím / lần kiểm tra Rotation
 local MAX_RETRY   = 5      -- số lần gửi lại một phím nếu Rotation không đổi, quá mức thì bỏ qua skill đó
 local WAIT_TIMEOUT = 30    -- tối đa chờ cooldown kết thúc (giây)
