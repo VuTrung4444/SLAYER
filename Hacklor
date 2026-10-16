@@ -263,7 +263,7 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.3)
         if not getgenv().AutoHoldClick then continue end
 
         local char = player.Character
@@ -611,8 +611,8 @@ cfgDefault("TravelSpeed", 250)        -- tốc độ di chuyển xa (studs/giây
 cfgDefault("TravelHeight", 200)       -- CHỈ khi di chuyển tới BossInfo: lên cao thêm chừng này (studs) rồi mới đi ngang, tới nơi mới hạ xuống (0 = đi thẳng)
 cfgDefault("TravelLiftMinDist", 200)  -- chỉ bay lên TravelHeight khi đích cách >= chừng này (studs); gần hơn thì đi thẳng
 cfgDefault("FollowRange", 180)        -- mob trong phạm vi này: đi bằng velocity (không noclip); ngoài phạm vi: tween + noclip
-cfgDefault("StuckDelay", 3)           -- (giây) lệch Y quá StuckYGap, hoặc không tiến lại gần mob, kéo dài chừng này thời gian = bị kẹt
-cfgDefault("StuckYGap", 10)           -- mob cao/thấp hơn nhân vật quá mức này (studs) được tính là lệch Y
+cfgDefault("StuckDelay", 2)           -- (giây) lệch Y quá StuckYGap, hoặc không tiến lại gần mob, kéo dài chừng này thời gian = bị kẹt
+cfgDefault("StuckYGap", 3)           -- mob cao/thấp hơn nhân vật quá mức này (studs) được tính là lệch Y
 cfgDefault("StuckMinMove", 2)         -- khoảng cách tới mob đổi ít hơn mức này (studs) sau StuckDelay = không tiến triển
 
 -- Chu kỳ cập nhật khi bám mob (nội bộ, không phải cấu hình). Cũng là thời gian tween tối thiểu
@@ -2003,7 +2003,7 @@ local VIM     = game:GetService("VirtualInputManager")
 local player  = Players.LocalPlayer
 
 -- Cấu hình
-local RANGE       = 10     -- chỉ dùng skill nếu có mob trong khoảng này (studs)
+local RANGE       = 20     -- chỉ dùng skill nếu có mob trong khoảng này (studs)
 local KEY_DELAY   = 0.2    -- khoảng cách giữa các lần gửi phím / lần kiểm tra Rotation
 local MAX_RETRY   = 5      -- số lần gửi lại một phím nếu Rotation không đổi, quá mức thì bỏ qua skill đó
 local WAIT_TIMEOUT = 30    -- tối đa chờ cooldown kết thúc (giây)
