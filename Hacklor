@@ -2295,25 +2295,45 @@ Ect:AddToggle({
     end
 })
 
+
 local autoFishing = false
+local runId = 0                  -- tăng mỗi lần bật/tắt: vòng cũ tự thoát, không bao giờ có hai vòng chạy cùng lúc
+local phase = "idle"             -- "cast" | "minigame" | "pickup" | "idle": chỉ MỘT khối chạy tại một thời điểm
+local needCast = false           -- sau khi nhặt xong (hoặc cá không lên) thì phải thả câu lại
 
 local player = game:GetService("Players").LocalPlayer
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local VirtualUser = game:GetService("VirtualUser")
 local debree = workspace:WaitForChild("Debree")
 
+local PICKUP_KEY = Enum.KeyCode.T
+local PICKUP_RETRY = 5           -- (giây) giữ T chừng này mà prompt chưa biến mất thì nhả phím rồi giữ lại
+
+local function Active(id)
+    return autoFishing and id == runId
+end
+
+-- ===== Điều khiển chuột / phím =====
 local function SimulateInput(isPressed)
     pcall(function()
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, isPressed, game, 1)
     end)
 end
 
+local function HoldKey(keyCode, isDown)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(isDown, keyCode, false, game)
+    end)
+end
+
+-- Click chỉ được phép trong khối CAST: các khối khác gọi vào sẽ bị bỏ qua
 local function ClickOnce()
+    if phase ~= "cast" then return end
     SimulateInput(true)
     task.wait(0.5)
     SimulateInput(false)
 end
 
+-- ===== Tìm đối tượng =====
 local function FindFishingCatch()
     for _, obj in ipairs(debree:GetChildren()) do
         if obj.Name:match("^FishingCatch_") then return obj end
@@ -2349,87 +2369,163 @@ local function FindPrompt(catch)
     end
 end
 
-local function CheckAndRecast()
-    local fishingLine = FindFishingLine()
-    if not fishingLine then return end
-
-    local startTick = tick()
-    local persistent = true
-    while tick() - startTick < 1.5 do
+-- Chờ finder() trả về giá trị, tối đa timeout giây; abortFn() trả true thì thôi chờ
+local function WaitFor(finder, timeout, id, abortFn)
+    local t0 = tick()
+    local result = finder()
+    while not result and tick() - t0 < timeout and Active(id) do
+        if abortFn and abortFn() then return nil end
         task.wait(0.1)
-        if not autoFishing then return end
-        if not fishingLine.Parent then
-            persistent = false
-            break
-        end
+        result = finder()
     end
-    if not persistent and autoFishing then ClickOnce() end
+    return result
 end
 
-local function HandleAfterMinigame()
-    local fishingCatch
-    local t = tick()
-    repeat
-        task.wait(0.1)
-        fishingCatch = FindFishingCatch()
-    until fishingCatch or tick() - t >= 3 or not autoFishing
+-- ===== KHỐI 1: CLICK (thả câu) =====
+-- Click một lần, chờ đường câu xuất hiện. Đường câu biến mất trong 1.5 giây đầu (hoặc không xuất hiện)
+-- = cast hỏng: vòng chính thấy không còn đường câu nên sẽ vào lại khối này để click lại
+local function DoCast(id)
+    phase = "cast"
+    if not Active(id) then return end
 
-    if not autoFishing then return end
-
-    if fishingCatch then
-        local t2 = tick()
-        while autoFishing and fishingCatch.Parent and tick() - t2 < 5 do
-            local prompt = FindPrompt(fishingCatch)
-            if prompt and prompt.Enabled then
-                fireproximityprompt(prompt)
-            end
-            task.wait(0.2)
-        end
-    end
-
-    if not autoFishing then return end
     ClickOnce()
-    CheckAndRecast()
+    if not Active(id) then return end
+
+    -- Cá cắn (xuất hiện thanh minigame) hoặc có vật phẩm thì dừng khối này ngay, không click thêm
+    local function Interrupted()
+        return FindUI() ~= nil or FindFishingCatch() ~= nil
+    end
+
+    local line = WaitFor(FindFishingLine, 3, id, Interrupted)
+    if not line then return end
+
+    local t0 = tick()
+    while Active(id) and tick() - t0 < 1.5 do
+        task.wait(0.1)
+        if not line.Parent then return end
+        if Interrupted() then return end
+    end
 end
 
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if not autoFishing then continue end
+-- ===== KHỐI 2: MINIGAME (điều khiển toạ độ Y tới khi progress đạt 100%) =====
+local function DoMinigame(id)
+    phase = "minigame"
 
+    while Active(id) do
         local bar, tracker, progressLabel = FindUI()
-        if not bar then
-            if not FindFishingLine() then
-                ClickOnce()
-                task.wait(0.5)
-                CheckAndRecast()
-            end
-            continue
-        end
+        if not bar then break end                                  -- thanh minigame đã biến mất
 
-        while autoFishing do
-            task.wait(0.1)
+        local progressValue = tonumber(progressLabel.Text:match("(%d+)%%"))
+        if progressValue and progressValue >= 100 then break end   -- đủ 100%
 
-            bar, tracker, progressLabel = FindUI()
-            if not bar then
-                SimulateInput(false)
-                HandleAfterMinigame()
-                break
-            end
-
-            local progressValue = tonumber(progressLabel.Text:match("(%d+)%%"))
-            if progressValue and progressValue >= 100 then
-                SimulateInput(false)
-                HandleAfterMinigame()
-                break
-            end
-
-            SimulateInput(tracker.Position.Y.Scale <= bar.Position.Y.Scale)
-        end
-
-        SimulateInput(false)
+        SimulateInput(tracker.Position.Y.Scale <= bar.Position.Y.Scale)
+        task.wait(0.1)
     end
-end)
+
+    SimulateInput(false)   -- luôn nhả chuột trước khi sang khối kế tiếp
+end
+
+-- ===== KHỐI 3: NHẶT (giữ phím T tới khi proximity prompt biến mất) =====
+-- Giữ T; sau PICKUP_RETRY giây mà prompt vẫn chưa biến mất thì nhả T rồi giữ lại. Lặp tới khi nhặt được.
+-- Nhặt xong thì nhả T và quay lại vòng lặp mới bằng khối Click.
+local function DoPickup(id)
+    phase = "pickup"
+
+    local catch = WaitFor(FindFishingCatch, 3, id)
+    if not catch then return end
+
+    local prompt
+    local t0 = tick()
+    repeat
+        prompt = FindPrompt(catch)
+        if not prompt then task.wait(0.1) end
+    until prompt or not catch.Parent or tick() - t0 >= 3 or not Active(id)
+    if not prompt then return end
+
+    local function Gone()
+        return not (catch.Parent and prompt.Parent and prompt.Enabled)
+    end
+
+    -- Trong lúc này KHÔNG có click hay thả câu nào chạy (cùng một luồng, tuần tự)
+    while Active(id) and not Gone() do
+        HoldKey(PICKUP_KEY, true)
+
+        local t1 = tick()
+        while Active(id) and not Gone() and tick() - t1 < PICKUP_RETRY do
+            task.wait(0.1)
+        end
+
+        HoldKey(PICKUP_KEY, false)                        -- đã nhặt xong, hoặc quá PICKUP_RETRY giây: nhả phím
+        if Active(id) and not Gone() then task.wait(0.2) end   -- chưa nhặt được: nghỉ ngắn rồi giữ lại
+    end
+end
+
+local function PickupThenRecast(id)
+    DoPickup(id)
+    needCast = true   -- nhặt xong: bắt đầu vòng lặp mới bằng click
+end
+
+-- ===== Một bước của vòng chính: chọn ĐÚNG MỘT khối để chạy =====
+local function Step(id)
+    -- Ưu tiên 1: đang có minigame -> điều khiển tới 100% rồi nhặt
+    if FindUI() then
+        DoMinigame(id)
+        if not Active(id) then return end
+        PickupThenRecast(id)
+        return
+    end
+
+    -- Ưu tiên 2: có vật phẩm chưa nhặt -> nhặt (không click)
+    if FindFishingCatch() then
+        PickupThenRecast(id)
+        return
+    end
+
+    -- Ưu tiên 3: cần thả câu (mới bật / vừa nhặt xong / không còn đường câu)
+    if needCast or not FindFishingLine() then
+        needCast = false
+        DoCast(id)
+        return
+    end
+
+    -- Còn lại: đã thả câu, đang chờ cá cắn
+    phase = "idle"
+end
+
+local function FishingLoop(id)
+    while Active(id) do
+        local ok, err = pcall(Step, id)
+        if not ok then
+            warn("[AutoFishing] Lỗi: " .. tostring(err))
+            SimulateInput(false)
+            HoldKey(PICKUP_KEY, false)
+            task.wait(1)
+        end
+        task.wait(0.1)
+    end
+
+    phase = "idle"
+    SimulateInput(false)
+    HoldKey(PICKUP_KEY, false)
+end
+
+Ect:AddToggle({
+    Name = "Auto Fishing",
+    Default = false,
+    Callback = function(value)
+        autoFishing = value
+        runId += 1
+
+        if value then
+            needCast = true
+            task.spawn(FishingLoop, runId)
+        else
+            SimulateInput(false)
+            HoldKey(PICKUP_KEY, false)
+        end
+    end
+})
+
 
 -- ===== AUTO TÌM BLACK MARKETER =====
 local Players      = game:GetService("Players")
@@ -2619,22 +2715,6 @@ toggleObj = Ect:AddToggle({
         else
             enabled = false
             runId += 1
-        end
-    end
-})
-
-Ect:AddToggle({
-    Name = "Auto Fishing",
-    Default = false,
-    Callback = function(value)
-        autoFishing = value
-        if value then
-            task.spawn(function()
-                ClickOnce()
-                CheckAndRecast()
-            end)
-        else
-            SimulateInput(false)
         end
     end
 })
